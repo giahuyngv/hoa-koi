@@ -1,0 +1,18 @@
+services:
+  hoa-koi-game:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hoa-koi-game
+    ports:
+      - "80:80"
+    environment:
+      PORT: "80"
+      NODE_ENV: "production"
+      REDIS_URL: "${REDIS_URL:-}"
+      MONGO_URL: "${MONGO_URL:-}"
+      POSTGRES_URL: "${POSTGRES_URL:-}"
+      MYSQL_URL: "${MYSQL_URL:-}"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

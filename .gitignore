@@ -1,0 +1,21 @@
+# File nén & Build
+*.zip
+GAME_DEPLOY.zip
+node_modules/
+dist/
+build/
+
+# Assets media / Ảnh dung lượng lớn không cần theo dõi mã nguồn
+*.jpg
+*.png
+*.gif
+*.mp4
+*.wav
+Ảnh bug/
+design_koikoi_modal/
+
+# File hệ thống & IDE
+.DS_Store
+Thumbs.db
+.claude/
+.agents/

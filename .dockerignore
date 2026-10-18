@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+.agents
+*.zip
+.DS_Store
+Thumbs.db
+server.py
+start_game.bat
+tools
+AGENTS.md
+cover_hoa_koi_16x9.jpg
+keyart_hoa_koi_1000x1250.jpg
+.zdeploy.yml

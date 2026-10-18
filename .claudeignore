@@ -1,0 +1,9 @@
+# Chặn Claude đọc các file nén và thư mục nặng
+GAME_DEPLOY.zip
+*.zip
+*.jpg
+*.png
+.git/
+node_modules/
+Ảnh bug/
+design_koikoi_modal/

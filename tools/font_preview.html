@@ -1,0 +1,242 @@
+<title>Hoa Koi Font Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="gf" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700&family=Yuji+Boku&family=Yuji+Syuku&family=Yuji+Mai&family=Shippori+Mincho+B1:wght@500;700;800&family=Kaisei+Decol:wght@500;700&family=Kaisei+Tokumin:wght@700;800&family=Zen+Antique&family=Zen+Old+Mincho:wght@600;700;900&family=Hina+Mincho&family=Dela+Gothic+One&family=Rampart+One&family=Noto+Serif+JP:wght@500;700;900&family=M+PLUS+1p:wght@400;500;700;800&family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Zen+Maru+Gothic:wght@400;500;700&family=Murecho:wght@400;500;700&family=Klee+One:wght@600&family=Yomogi&family=Cormorant+Garamond:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: washi sheet — combo tabs on top, a live game-panel mock, then a font-by-font audit grid */
+:root{
+  --bg:#f3e7d0; --paper:#fbf4e6; --ink:#2e1a12; --muted:#76584a; --line:rgba(110,59,30,.22);
+  --vermilion:#b52b2f; --gold:#b87314; --ok:#1b7a50; --bad:#b52b2f; --chip:#efe0c4;
+  --ui:'Be Vietnam Pro',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#150f1d; --paper:#1f1729; --ink:#f6efe4; --muted:#bfaecb; --line:rgba(255,209,102,.18);
+  --vermilion:#ef6a5e; --gold:#ffd166; --ok:#5fd39a; --bad:#ff7b72; --chip:#2b2138; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#150f1d; --paper:#1f1729; --ink:#f6efe4; --muted:#bfaecb; --line:rgba(255,209,102,.18);
+  --vermilion:#ef6a5e; --gold:#ffd166; --ok:#5fd39a; --bad:#ff7b72; --chip:#2b2138; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--ui);font-size:15px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 56px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+header h1{font-family:'Shippori Mincho B1','Noto Serif JP',serif;font-weight:800;font-size:clamp(26px,4vw,36px);margin:0;text-wrap:balance}
+header p{margin:6px 0 0;color:var(--muted);max-width:68ch}
+.note{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 16px;color:var(--muted);font-size:14px}
+.note b{color:var(--ink)}
+h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin:0 0 10px;font-weight:700}
+.tabs{display:flex;flex-wrap:wrap;gap:8px}
+.tab{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--paper);color:var(--ink);padding:8px 14px;border-radius:999px;cursor:pointer}
+.tab[aria-pressed="true"]{background:var(--vermilion);border-color:var(--vermilion);color:#fff}
+.tab:focus-visible,.copy:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.combo-desc{margin:10px 0 0;color:var(--muted);font-size:14px;max-width:75ch}
+
+/* game mock */
+.mock{display:grid;grid-template-columns:1.1fr 1fr;gap:0;border-radius:14px;overflow:hidden;border:1px solid var(--line);
+  background:linear-gradient(160deg,#f7ecd6,#e8d2ab);color:#2e1a12}
+.mock.dark{background:linear-gradient(160deg,#1d1628,#120d1a);color:#fff}
+.mock .side{padding:26px 24px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.mock .side+.side{border-left:1px solid rgba(110,59,30,.2)}
+.mock.dark .side+.side{border-left-color:rgba(255,209,102,.18)}
+.m-title{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.m-title .latin{font-size:clamp(34px,6vw,54px);line-height:1;letter-spacing:.04em;color:#84191d}
+.mock.dark .m-title .latin{color:#ffd166}
+.m-title .kanji{font-size:clamp(30px,5vw,46px);line-height:1;background:#b52b2f;color:#fff;border-radius:50%;width:1.7em;height:1.7em;display:grid;place-items:center}
+.m-sub{font-size:20px;margin-top:-4px}
+.m-body{font-size:15px;line-height:1.6;max-width:46ch}
+.m-btns{display:flex;gap:10px;flex-wrap:wrap}
+.m-btn{border:0;border-radius:999px;padding:10px 18px;font-size:15px;background:#b52b2f;color:#fff;cursor:default}
+.m-btn.alt{background:transparent;border:2px solid #b87314;color:inherit}
+.yaku{display:flex;flex-direction:column;gap:8px}
+.y{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-bottom:1px dashed rgba(110,59,30,.3);padding-bottom:6px}
+.mock.dark .y{border-color:rgba(255,209,102,.2)}
+.y .vn{font-size:17px}
+.y .jp{font-size:13px;opacity:.75}
+.y .pt{font-size:20px;color:#b52b2f;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mock.dark .y .pt{color:#ffd166}
+.bubble{background:rgba(255,255,255,.65);border-radius:12px;padding:12px 14px;font-size:15px}
+.mock.dark .bubble{background:rgba(255,255,255,.07)}
+.bubble .who{font-size:13px;opacity:.7;display:block}
+.mock-toggle{margin-top:8px;font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center}
+.mock-toggle input{accent-color:var(--vermilion)}
+@media (max-width:720px){.mock{grid-template-columns:1fr}.mock .side+.side{border-left:0;border-top:1px solid rgba(110,59,30,.2)}}
+
+.code{position:relative;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto}
+.code pre{margin:0;font:13px/1.55 ui-monospace,Consolas,monospace;white-space:pre}
+.copy{position:absolute;top:8px;right:8px;font:inherit;font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer}
+
+/* audit grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.f{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.f-head{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.f-name{font-weight:700;font-size:14px}
+.f-role{font-size:12px;color:var(--muted)}
+.badge{font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 8px;border-radius:999px;white-space:nowrap;background:var(--chip);color:var(--muted)}
+.badge.ok{color:var(--ok)} .badge.bad{color:var(--bad)}
+.f-vn{font-size:24px;line-height:1.3;overflow-wrap:anywhere}
+.f-jp{font-size:20px;color:var(--muted)}
+.f-why{font-size:13px;color:var(--muted)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Font cho Hoa Koi 花恋</h1>
+    <p>Hiện game dùng Cormorant Garamond (serif châu Âu) cho tiêu đề và Plus Jakarta Sans (sans hiện đại) cho chữ thường, nên chữ Việt trông "Tây" hơn phần art Ōkami. Dưới đây là 5 bộ font Google Fonts thay thế, xem trực tiếp trên khung giao diện mẫu.</p>
+  </header>
+
+  <div class="note"><b>Lưu ý tiếng Việt:</b> nhiều font Nhật trên Google Fonts không có bộ ký tự tiếng Việt (ấ, ở, ữ, ệ…). Khi thiếu, trình duyệt lấy dấu từ font khác nên chữ bị lệch nét. Vì vậy mỗi bộ dưới đây chia vai: font Nhật "đậm chất" cho tên game, kanji, romaji; font có hỗ trợ Việt cho tiêu đề và nội dung tiếng Việt. Phần cuối trang tự kiểm tra font nào có tiếng Việt.</div>
+
+  <section>
+    <h2>Chọn bộ font</h2>
+    <div class="tabs" id="tabs" role="group" aria-label="Bộ font"></div>
+    <p class="combo-desc" id="combo-desc"></p>
+  </section>
+
+  <section>
+    <div class="mock" id="mock">
+      <div class="side">
+        <div class="m-title"><span class="latin" data-r="title">HOA KOI</span><span class="kanji" data-r="kanji">花恋</span></div>
+        <div class="m-sub" data-r="head">Đấu Bài Hoa Nhật Bản</div>
+        <p class="m-body" data-r="body">Ghép lá cùng tháng trên chiếu để ăn bài. Đủ một bộ Yaku thì chọn Koi-Koi để đánh tiếp, hoặc dừng lại để ghi điểm. Tháng Chín có hoa cúc và chén rượu sakazuki.</p>
+        <div class="m-btns"><button class="m-btn" data-r="head" tabindex="-1">Koi-Koi! Đánh tiếp</button><button class="m-btn alt" data-r="head" tabindex="-1">Dừng · Ghi điểm</button></div>
+      </div>
+      <div class="side">
+        <div class="yaku">
+          <div class="y"><span><span class="vn" data-r="head">Ngũ Quang</span><br><span class="jp" data-r="kanji">五光 · Gokō</span></span><span class="pt" data-r="title">10 điểm</span></div>
+          <div class="y"><span><span class="vn" data-r="head">Hoa Kiến Tửu</span><br><span class="jp" data-r="kanji">花見酒 · Hanami-zake</span></span><span class="pt" data-r="title">5 điểm</span></div>
+          <div class="y"><span><span class="vn" data-r="head">Lợn – Hươu – Bướm</span><br><span class="jp" data-r="kanji">猪鹿蝶 · Inoshikachō</span></span><span class="pt" data-r="title">5 điểm</span></div>
+        </div>
+        <div class="bubble" data-r="body"><span class="who" data-r="kanji">Ayame · 菖蒲</span>Lượt của bạn rồi đó! Lá Cúc và Chén rượu đang nằm trên chiếu, đừng để đối thủ ăn mất nhé.</div>
+      </div>
+    </div>
+    <label class="mock-toggle"><input type="checkbox" id="mockdark"> Xem ở dark mode của game (sơn mài Urushi)</label>
+  </section>
+
+  <section>
+    <h2>Code cho bộ đang chọn</h2>
+    <div class="code"><button class="copy" id="copy" type="button">Copy</button><pre id="snippet"></pre></div>
+  </section>
+
+  <section>
+    <h2>Kiểm tra từng font</h2>
+    <div class="legend"><span>Badge tự đo trong trình duyệt của bạn: <b style="color:var(--ok)">Có tiếng Việt</b> = dùng được cho chữ Việt; <b style="color:var(--bad)">Thiếu dấu Việt</b> = chỉ dùng cho kanji, romaji, số.</span></div>
+    <div class="grid" id="grid" style="margin-top:12px"></div>
+  </section>
+</div>
+
+<script>
+const FONTS = {
+  'Yuji Boku':{w:'400',fb:'serif',role:'Thư pháp cọ đậm',why:'Nét cọ khô, mạnh. Hợp tên game, chữ KOI-KOI!, thông báo thắng.'},
+  'Yuji Syuku':{w:'400',fb:'serif',role:'Thư pháp cọ (đang dùng)',why:'Đang dùng cho một số tiêu đề. Mềm hơn Yuji Boku.'},
+  'Yuji Mai':{w:'400',fb:'serif',role:'Thư pháp mảnh',why:'Mảnh, bay. Hợp tên nhân vật, kanji trang trí.'},
+  'Shippori Mincho B1':{w:'500;700;800',fb:'serif',role:'Mincho cổ điển',why:'Mincho in sách cũ, nét mực loang nhẹ. Rất hợp giấy Washi.'},
+  'Kaisei Decol':{w:'500;700',fb:'serif',role:'Mincho trang trí',why:'Đầu nét tròn, dễ thương mà vẫn cổ. Hợp vibe Chaya kawaii.'},
+  'Kaisei Tokumin':{w:'700;800',fb:'serif',role:'Mincho đậm tiêu đề',why:'Đậm, tương phản cao, như chữ trên bảng hiệu Edo.'},
+  'Zen Antique':{w:'400',fb:'serif',role:'Mộc bản Ukiyo-e',why:'Giống chữ in khắc gỗ, rất hợp art Ukiyo-e của nhân vật v7.'},
+  'Zen Old Mincho':{w:'600;700;900',fb:'serif',role:'Mincho cũ',why:'Mincho kiểu cũ, có nhiều độ đậm, dễ dùng cho heading.'},
+  'Hina Mincho':{w:'400',fb:'serif',role:'Mincho thanh mảnh',why:'Thanh, nữ tính. Hợp lời thoại, tên lá bài.'},
+  'Dela Gothic One':{w:'400',fb:'sans-serif',role:'Gothic siêu đậm',why:'Chữ game arcade Nhật, nổi bật trên nút và điểm số.'},
+  'Rampart One':{w:'400',fb:'sans-serif',role:'Chữ khối 3D',why:'Viền nổi khối, vui mắt cho combo, số điểm lớn.'},
+  'Noto Serif JP':{w:'500;700;900',fb:'serif',role:'Mincho chuẩn',why:'Phủ ký tự rộng, ổn định. Lựa chọn an toàn cho heading tiếng Việt.'},
+  'M PLUS 1p':{w:'400;500;700;800',fb:'sans-serif',role:'Gothic UI',why:'Sans của Nhật, nét gọn, đọc tốt ở cỡ nhỏ cho nội dung.'},
+  'M PLUS Rounded 1c':{w:'400;500;700;800',fb:'sans-serif',role:'Gothic bo tròn',why:'Bo tròn mềm, hợp UI kawaii, nút bấm, hướng dẫn.'},
+  'Zen Maru Gothic':{w:'400;500;700',fb:'sans-serif',role:'Gothic bo tròn',why:'Bo tròn thanh lịch hơn M PLUS Rounded.'},
+  'Murecho':{w:'400;500;700',fb:'sans-serif',role:'Gothic hiện đại',why:'Gothic hơi nghiêng chất viết tay, nhiều độ đậm.'},
+  'Klee One':{w:'600',fb:'serif',role:'Viết tay bút chì',why:'Như chữ viết tay giáo viên. Hợp ghi chú, tutorial.'},
+  'Yomogi':{w:'400',fb:'sans-serif',role:'Viết tay dễ thương',why:'Chữ viết tay tròn, hợp bong bóng thoại kawaii.'},
+};
+
+const COMBOS = [
+  {id:'sumi', name:'Mực tàu Ōkami', desc:'Tên game và kanji viết bằng cọ đậm, tiêu đề tiếng Việt là Mincho, nội dung là Gothic gọn. Gần art Ōkami nhất.',
+    title:'Yuji Boku', kanji:'Yuji Boku', head:'Noto Serif JP', headW:700, body:'M PLUS 1p'},
+  {id:'ukiyo', name:'Mộc bản Ukiyo-e', desc:'Chữ như in khắc gỗ, đi cùng nền tranh Ukiyo-e và vòng hào quang Washi của nhân vật.',
+    title:'Zen Antique', kanji:'Zen Antique', head:'Zen Old Mincho', headW:700, body:'M PLUS 1p'},
+  {id:'mincho', name:'Mincho thanh lịch', desc:'Gần với font hiện tại nhất nhưng thuần Nhật: thay Cormorant bằng Shippori Mincho B1, kanji dùng thư pháp mảnh.',
+    title:'Shippori Mincho B1', titleW:800, kanji:'Yuji Mai', head:'Shippori Mincho B1', headW:700, body:'Zen Maru Gothic'},
+  {id:'chaya', name:'Chaya dễ thương', desc:'Mềm, bo tròn, hợp chất "Kawaii & Traditional" trong CSS. Tiêu đề Kaisei Decol, nội dung M PLUS Rounded.',
+    title:'Kaisei Decol', titleW:700, kanji:'Kaisei Decol', head:'M PLUS Rounded 1c', headW:800, body:'M PLUS Rounded 1c'},
+  {id:'arcade', name:'Arcade Edo', desc:'Mạnh, kiểu game điện tử Nhật. Tên game, nút và điểm số dùng Gothic siêu đậm.',
+    title:'Dela Gothic One', kanji:'Dela Gothic One', head:'Dela Gothic One', headW:400, body:'M PLUS 1p'},
+  {id:'now', name:'Đang dùng', desc:'Font hiện tại của game để so sánh: Cormorant Garamond + Plus Jakarta Sans, kanji Yuji Syuku.',
+    title:'Cormorant Garamond', titleW:700, kanji:'Yuji Syuku', head:'Cormorant Garamond', headW:700, body:'Plus Jakarta Sans'},
+];
+
+const stack = f => `'${f}', ${(FONTS[f]||{fb:'serif'}).fb}`;
+const $ = s => document.querySelector(s);
+let current = COMBOS[0];
+
+function render(c){
+  current = c;
+  document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-pressed', t.dataset.id===c.id));
+  $('#combo-desc').textContent = c.desc;
+  const map = {title:[c.title,c.titleW||400], kanji:[c.kanji,400], head:[c.head,c.headW||700], body:[c.body,400]};
+  document.querySelectorAll('#mock [data-r]').forEach(el=>{
+    const [f,w] = map[el.dataset.r];
+    el.style.fontFamily = stack(f); el.style.fontWeight = w;
+  });
+  $('#snippet').textContent = snippet(c);
+}
+
+function snippet(c){
+  if(c.id==='now') return '/* Bộ font hiện tại, không cần đổi */';
+  const fams = [...new Set([c.title,c.kanji,c.head,c.body])];
+  const q = fams.map(f=>{
+    const w = (FONTS[f]||{}).w || '400';
+    return 'family=' + f.replace(/ /g,'+') + (w==='400' ? '' : ':wght@' + w);
+  }).join('&');
+  return `<!-- index.html: thay thẻ <link> Google Fonts hiện tại -->
+<link href="https://fonts.googleapis.com/css2?${q}&display=swap" rel="stylesheet" />
+
+/* main.css :root */
+--font-title: ${stack(c.title)};   /* HOA KOI, KOI-KOI!, điểm số */
+--font-kanji: ${stack(c.kanji)};   /* 花恋, tên Nhật, kanji */
+--font-display: ${stack(c.head)}; /* tiêu đề tiếng Việt */
+--font-body: ${stack(c.body)}, system-ui; /* nội dung, nút */`;
+}
+
+COMBOS.forEach(c=>{
+  const b = document.createElement('button');
+  b.className='tab'; b.type='button'; b.dataset.id=c.id; b.textContent=c.name;
+  b.addEventListener('click',()=>render(c));
+  $('#tabs').appendChild(b);
+});
+$('#mockdark').addEventListener('change',e=>$('#mock').classList.toggle('dark',e.target.checked));
+$('#copy').addEventListener('click',async()=>{
+  const t=$('#snippet').textContent;
+  try{await navigator.clipboard.writeText(t);$('#copy').textContent='Đã copy';}
+  catch(_){const r=document.createRange();r.selectNodeContents($('#snippet'));const s=getSelection();s.removeAllRanges();s.addRange(r);$('#copy').textContent='Đã chọn, nhấn Ctrl+C';}
+  setTimeout(()=>$('#copy').textContent='Copy',1800);
+});
+
+// font audit cards
+const VN_SAMPLE = 'Đấu Bài Hoa · Ngũ Quang';
+const VN_PROBE = 'ấầẩẫậắằẳẵặếềểễệốồổỗộớờởỡợứừửữựỳỷỹỵ';
+const grid = $('#grid');
+Object.entries(FONTS).forEach(([f,info])=>{
+  const d = document.createElement('div'); d.className='f';
+  d.innerHTML = `<div class="f-head"><div><div class="f-name"></div><div class="f-role"></div></div><span class="badge">Đang kiểm tra…</span></div>
+    <div class="f-vn"></div><div class="f-jp">花札 · 松に鶴 · KOI-KOI 10</div><div class="f-why"></div>`;
+  d.querySelector('.f-name').textContent=f; d.querySelector('.f-role').textContent=info.role;
+  d.querySelector('.f-why').textContent=info.why;
+  d.querySelector('.f-vn').textContent=VN_SAMPLE;
+  d.querySelector('.f-vn').style.fontFamily=stack(f); d.querySelector('.f-jp').style.fontFamily=stack(f);
+  grid.appendChild(d);
+  checkVN(f, d.querySelector('.badge'));
+});
+
+async function checkVN(f, badge){
+  const ctx = document.createElement('canvas').getContext('2d');
+  const w = (fam,txt)=>{ctx.font=`40px ${fam}`;return ctx.measureText(txt).width;};
+  try{ await document.fonts.load(`40px "${f}"`, 'Abc' + VN_PROBE + '花'); }catch(_){}
+  const latinLoaded = Math.abs(w(`"${f}", monospace`,'Hamburgefontsiv') - w('monospace','Hamburgefontsiv'))>0.5;
+  if(!latinLoaded){badge.textContent='Không tải được';return;}
+  const a = w(`"${f}", monospace`, VN_PROBE), b = w(`"${f}", serif`, VN_PROBE);
+  const ok = Math.abs(a-b) < 0.5;
+  badge.textContent = ok ? 'Có tiếng Việt' : 'Thiếu dấu Việt';
+  badge.classList.add(ok?'ok':'bad');
+}
+
+render(COMBOS[0]);
+</script>
