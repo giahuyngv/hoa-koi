@@ -5,7 +5,7 @@
  * - Automatic error-free fallback to local JSON file (data/local_db.json)
  * - /health (HTML dashboard & JSON API) & /api/health endpoints
  * - Real-time PvP Online Matchmaking (/api/matchmaking/*) & Custom Code Rooms (/api/rooms/*)
- * - Static file serving for index.html, src/, public/assets/
+ * - Static file serving for index.html, src/, public/assets/ (brotli/gzip + ETag; file có ?v= cache 1 năm)
  */
 
 const http = require('http');
@@ -14,6 +14,7 @@ const path = require('path');
 const net = require('net');
 const crypto = require('crypto');
 const { URL } = require('url');
+const zlib = require('zlib');
 
 const ROOT_DIR = path.resolve(__dirname);
 const DATA_DIR = path.join(ROOT_DIR, 'data');
@@ -419,6 +420,71 @@ function resolveSafeStaticFile(pathname) {
   return candidate;
 }
 
+const COMPRESSIBLE_EXTS = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg']);
+const compressedCache = new Map(); // filePath -> { etag, br, gzip }
+
+function getCompressed(filePath, etag, encoding) {
+  let entry = compressedCache.get(filePath);
+  if (!entry || entry.etag !== etag) {
+    entry = { etag, br: null, gzip: null };
+    compressedCache.set(filePath, entry);
+  }
+  if (!entry[encoding]) {
+    const raw = fs.readFileSync(filePath);
+    entry[encoding] =
+      encoding === 'br'
+        ? zlib.brotliCompressSync(raw, {
+            params: {
+              [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
+              [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length
+            }
+          })
+        : zlib.gzipSync(raw, { level: 9 });
+  }
+  return entry[encoding];
+}
+
+function pickEncoding(acceptEncoding) {
+  const accept = String(acceptEncoding || '').toLowerCase();
+  if (/\bbr\b/.test(accept)) return 'br';
+  if (/\bgzip\b/.test(accept)) return 'gzip';
+  return null;
+}
+
+function sendStaticFile(req, res, filePath, searchParams) {
+  const ext = path.extname(filePath).toLowerCase();
+  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+  const stat = fs.statSync(filePath);
+  const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+  // URL có ?v= (bundle, css, ảnh đã đánh version) → cache dài; còn lại (index.html…) phải hỏi lại server bằng ETag
+  const versioned = filePath !== INDEX_FILE && searchParams.has('v');
+  const compressible = COMPRESSIBLE_EXTS.has(ext);
+  const headers = {
+    ...SECURITY_HEADERS,
+    'Content-Type': contentType,
+    'Cache-Control': versioned ? 'public, max-age=31536000, immutable' : 'no-cache',
+    ETag: etag
+  };
+  if (compressible) headers.Vary = 'Accept-Encoding';
+
+  const inm = req.headers['if-none-match'];
+  if (inm && inm.split(',').some((t) => t.trim() === etag)) {
+    res.writeHead(304, headers);
+    return res.end();
+  }
+
+  const encoding = compressible && stat.size > 1024 ? pickEncoding(req.headers['accept-encoding']) : null;
+  if (encoding) {
+    const body = getCompressed(filePath, etag, encoding);
+    res.writeHead(200, { ...headers, 'Content-Encoding': encoding, 'Content-Length': body.length });
+    return res.end(req.method === 'HEAD' ? undefined : body);
+  }
+
+  res.writeHead(200, { ...headers, 'Content-Length': stat.size });
+  if (req.method === 'HEAD') return res.end();
+  fs.createReadStream(filePath).pipe(res);
+}
+
 ensureJsonStore();
 
 const server = http.createServer(async (req, res) => {
@@ -632,17 +698,7 @@ const server = http.createServer(async (req, res) => {
     return res.end('404 Not Found');
   }
 
-  const ext = path.extname(filePath).toLowerCase();
-  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-  const stat = fs.statSync(filePath);
-  res.writeHead(200, {
-    ...SECURITY_HEADERS,
-    'Content-Type': contentType,
-    'Content-Length': stat.size,
-    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
-  });
-  if (req.method === 'HEAD') return res.end();
-  fs.createReadStream(filePath).pipe(res);
+  return sendStaticFile(req, res, filePath, parsedUrl.searchParams);
 });
 
 server.headersTimeout = 15000;

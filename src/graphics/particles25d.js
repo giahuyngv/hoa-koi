@@ -31,10 +31,10 @@ export class ParticleSystem25D {
 
     // Preload Month 9 (Kiku) standalone watercolor petal sprites (2 red + 2 yellow)
     this.kikuPetalSprites = [
-      './public/assets/diorama/month9/kiku_petal_red_1.png',
-      './public/assets/diorama/month9/kiku_petal_yellow_1.png',
-      './public/assets/diorama/month9/kiku_petal_red_2.png',
-      './public/assets/diorama/month9/kiku_petal_yellow_2.png'
+      './public/assets/diorama/month9/kiku_petal_red_1.webp?v=32',
+      './public/assets/diorama/month9/kiku_petal_yellow_1.webp?v=32',
+      './public/assets/diorama/month9/kiku_petal_red_2.webp?v=32',
+      './public/assets/diorama/month9/kiku_petal_yellow_2.webp?v=32'
     ].map((src) => {
       const img = new Image();
       img.decoding = 'async';
@@ -164,11 +164,26 @@ export class ParticleSystem25D {
     let lastTime = performance.now();
     const tick = (now) => {
       if (!this.running) return;
+      // Tab ẩn: dừng hẳn vòng lặp, chạy lại khi tab hiện (xem visibilitychange bên dưới)
+      if (document.hidden) {
+        this.pausedByVisibility = true;
+        return;
+      }
       const dt = Math.min(0.05, (now - lastTime) * 0.001);
       lastTime = now;
       this.updateAndDraw(now * 0.001, dt);
       requestAnimationFrame(tick);
     };
+    if (!this.handleVisibility) {
+      this.handleVisibility = () => {
+        if (!document.hidden && this.running && this.pausedByVisibility) {
+          this.pausedByVisibility = false;
+          lastTime = performance.now();
+          requestAnimationFrame(tick);
+        }
+      };
+      document.addEventListener('visibilitychange', this.handleVisibility);
+    }
     requestAnimationFrame(tick);
   }
 

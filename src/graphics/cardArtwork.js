@@ -4,14 +4,14 @@
 import { getCardSkinById, getCardBackById } from '../data/collectionData.js';
 
 /**
- * Generates the card face markup using the authentic real Hanafuda card image (card_1.jpg .. card_48.jpg)
+ * Generates the card face markup using the authentic real Hanafuda card image (card_1.webp .. card_48.webp)
  * with optional collectible Skin frame/tint and compact gameplay month/point badges.
  */
 export function renderCardFaceSVG(card, skinId = 'skin_traditional_edo', showBadges = true) {
   const skin = getCardSkinById(skinId);
   const p = skin.palette;
   const uid = `c${card.id}_${skin.id}`;
-  const imgHref = `./public/assets/cards/card_${card.id}.jpg`;
+  const imgHref = `./public/assets/cards/card_${card.id}.webp?v=26`;
 
   // Optional skin decorative overlay (keeps the real Hanafuda artwork 100% recognizable)
   let skinOverlay = '';
@@ -107,7 +107,7 @@ function renderCardHeaderBadges(card, p) {
 export function renderCardBackSVG(backId = 'back_urushi_red') {
   const back = getCardBackById(backId);
   const uid = `b_${back.id}`;
-  const backImgHref = `./public/assets/backs/${back.id}.jpg?v=25`;
+  const backImgHref = `./public/assets/backs/${back.id}.webp?v=26`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 248" class="hanafuda-back-svg">
     <defs>
@@ -266,13 +266,13 @@ export function renderTabletopFlowerDioramaSVG() {
         </div>
       </div>
 
-      <img src="./public/assets/diorama/month9/kiku_petal_yellow_1.png?v=31"
+      <img src="./public/assets/diorama/month9/kiku_petal_yellow_1.webp?v=32"
            class="kiku-el kiku-landed-petal lp-1" alt="" decoding="async" />
-      <img src="./public/assets/diorama/month9/kiku_petal_red_1.png?v=31"
+      <img src="./public/assets/diorama/month9/kiku_petal_red_1.webp?v=32"
            class="kiku-el kiku-landed-petal lp-2" alt="" decoding="async" />
-      <img src="./public/assets/diorama/month9/kiku_petal_yellow_2.png?v=31"
+      <img src="./public/assets/diorama/month9/kiku_petal_yellow_2.webp?v=32"
            class="kiku-el kiku-landed-petal lp-3" alt="" decoding="async" />
-      <img src="./public/assets/diorama/month9/kiku_petal_red_2.png?v=31"
+      <img src="./public/assets/diorama/month9/kiku_petal_red_2.webp?v=32"
            class="kiku-el kiku-landed-petal lp-4" alt="" decoding="async" />
     </div>
   `;
@@ -292,7 +292,7 @@ export function renderTabletopBillboardDioramaHTML() {
       <div class="kiku-cloud-drift-layer layer-back">
         <div class="kiku-drift-track drift-b track-center-high">
           <div class="kiku-drift-offset">
-            <img src="./public/assets/diorama/month9/kiku_red_cloud_v3.png?v=31"
+            <img src="./public/assets/diorama/month9/kiku_red_cloud_v3.webp?v=32"
                  class="kiku-el kiku-cloud cloud-center-high"
                  alt="" decoding="async" />
           </div>
@@ -301,14 +301,14 @@ export function renderTabletopBillboardDioramaHTML() {
       <div class="kiku-cloud-drift-layer layer-front">
         <div class="kiku-drift-track drift-a track-left-mid">
           <div class="kiku-drift-offset">
-            <img src="./public/assets/diorama/month9/kiku_red_cloud_v2.png?v=31"
+            <img src="./public/assets/diorama/month9/kiku_red_cloud_v2.webp?v=32"
                  class="kiku-el kiku-cloud cloud-left-mid cloud-over-field"
                  alt="" decoding="async" />
           </div>
         </div>
         <div class="kiku-drift-track drift-c track-right-low">
           <div class="kiku-drift-offset">
-            <img src="./public/assets/diorama/month9/kiku_red_cloud_v1.png?v=31"
+            <img src="./public/assets/diorama/month9/kiku_red_cloud_v1.webp?v=32"
                  class="kiku-el kiku-cloud cloud-right-low cloud-over-field"
                  alt="" decoding="async" />
           </div>
@@ -321,10 +321,10 @@ export function renderTabletopBillboardDioramaHTML() {
       <!-- Top-Left Chrysanthemum Plant (+130% size) with Purple Poetry Ribbon:
            Fixed under Left UI panel (does NOT move with board tilt) -->
       <div class="kiku-left-plant-group">
-        <img src="./public/assets/diorama/month9/kiku_plant_v2.png?v=31"
+        <img src="./public/assets/diorama/month9/kiku_plant_v2.webp?v=32"
              class="kiku-el kiku-plant plant-tl-sweep"
              alt="" decoding="async" />
-        <img src="./public/assets/diorama/month9/kiku_purple_ribbon.png?v=31"
+        <img src="./public/assets/diorama/month9/kiku_purple_ribbon.webp?v=32"
              class="kiku-el kiku-ribbon-aotan"
              alt="" decoding="async" />
       </div>
@@ -332,7 +332,7 @@ export function renderTabletopBillboardDioramaHTML() {
       <!-- 3D Board Plane for Top-Right Chrysanthemum Cluster (moves/scales with board, stays upright to POV) -->
       <div class="kiku-board-plane plane-back">
         <div class="kiku-billboard-anchor anchor-tr-cluster">
-          <img src="./public/assets/diorama/month9/kiku_plant_v3.png?v=31"
+          <img src="./public/assets/diorama/month9/kiku_plant_v3.webp?v=32"
                class="kiku-el kiku-plant plant-tr-cluster"
                alt="" decoding="async" />
         </div>
@@ -343,18 +343,18 @@ export function renderTabletopBillboardDioramaHTML() {
     <div class="kiku-board-plane plane-front" aria-hidden="true">
       <!-- Bottom-Right Standing Chrysanthemum Plant -->
       <div class="kiku-billboard-anchor anchor-br-tall">
-        <img src="./public/assets/diorama/month9/kiku_plant_v1.png?v=31"
+        <img src="./public/assets/diorama/month9/kiku_plant_v1.webp?v=32"
              class="kiku-el kiku-plant plant-br-tall"
              alt="" decoding="async" />
       </div>
 
       <!-- Bottom-Left Rock Stream & Sloshing Sakazuki Sake Cup (寿) -->
       <div class="kiku-sakazuki-group">
-        <img src="./public/assets/diorama/month9/kiku_rock_stream.png?v=31"
+        <img src="./public/assets/diorama/month9/kiku_rock_stream.webp?v=32"
              class="kiku-el kiku-rock-stream"
              alt="" decoding="async" />
         <div class="kiku-sake-cup-holder">
-          <img src="./public/assets/diorama/month9/kiku_sake_cup.png?v=31"
+          <img src="./public/assets/diorama/month9/kiku_sake_cup.webp?v=32"
                class="kiku-el kiku-sake-cup"
                alt="" decoding="async" />
           <div class="kiku-sake-ripple-ring ring-1"></div>
@@ -363,11 +363,11 @@ export function renderTabletopBillboardDioramaHTML() {
       </div>
 
       <!-- Falling Petals Drifting into the Playing Board -->
-      <img src="./public/assets/diorama/month9/kiku_petal_red_1.png?v=31"
+      <img src="./public/assets/diorama/month9/kiku_petal_red_1.webp?v=32"
            class="kiku-el kiku-falling-petal fp-1" alt="" decoding="async" />
-      <img src="./public/assets/diorama/month9/kiku_petal_yellow_1.png?v=31"
+      <img src="./public/assets/diorama/month9/kiku_petal_yellow_1.webp?v=32"
            class="kiku-el kiku-falling-petal fp-2" alt="" decoding="async" />
-      <img src="./public/assets/diorama/month9/kiku_petal_red_2.png?v=31"
+      <img src="./public/assets/diorama/month9/kiku_petal_red_2.webp?v=32"
            class="kiku-el kiku-falling-petal fp-3" alt="" decoding="async" />
     </div>
   `;

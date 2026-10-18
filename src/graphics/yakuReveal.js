@@ -130,7 +130,7 @@ function yrBuildMarkup(yaku, opts, index, total) {
     .map((name, i) => {
       const s = YR_SUBJECT_SLOTS[i];
       return `<div class="yr-float yr-subject" style="left:${s.x}%;top:${s.y}%;width:${s.w}%;--d:${s.d};--k:${i}">
-        <img src="${YR_ASSET_DIR}${name}.png" alt="" draggable="false" />
+        <img src="${YR_ASSET_DIR}${name}.webp?v=2" alt="" draggable="false" />
       </div>`;
     })
     .join('');
@@ -140,7 +140,7 @@ function yrBuildMarkup(yaku, opts, index, total) {
       const s = YR_FLOWER_SLOTS[i];
       const f = YR_FLOWER_BY_MONTH[m];
       return `<div class="yr-float yr-flower${s.flip ? ' is-flip' : ''}" style="left:${s.x}%;top:${s.y}%;width:${s.w}%;--d:${s.d};--k:${i + 1};--r:${s.r}deg">
-        <img src="${YR_ASSET_DIR}${f.img}.png" alt="" draggable="false" />
+        <img src="${YR_ASSET_DIR}${f.img}.webp?v=2" alt="" draggable="false" />
       </div>`;
     })
     .join('');
@@ -191,12 +191,30 @@ function yrBuildMarkup(yaku, opts, index, total) {
     </div>`;
 }
 
+// Làm ấm cache toàn bộ ảnh popup khi trình duyệt rảnh (tải lần lượt, không tranh băng thông với trận)
+export function warmYakuRevealAssets() {
+  const names = [
+    ...new Set(Object.values(YR_SUBJECT_BY_CARD)),
+    ...Object.values(YR_FLOWER_BY_MONTH).map((f) => f.img)
+  ];
+  const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 200));
+  const next = () => {
+    const name = names.shift();
+    if (!name) return;
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = img.onerror = () => idle(next);
+    img.src = `${YR_ASSET_DIR}${name}.webp?v=2`;
+  };
+  idle(next);
+}
+
 // Tải trước ảnh trang trí + font kanji của bộ (tối đa ~350ms để không làm chậm trận)
 function yrPreload(yaku) {
   const { subjects, months } = yrCollectDecor((yaku.cards || []).slice(0, 15));
   const urls = [
-    ...subjects.map((n) => `${YR_ASSET_DIR}${n}.png`),
-    ...months.map((m) => `${YR_ASSET_DIR}${YR_FLOWER_BY_MONTH[m].img}.png`)
+    ...subjects.map((n) => `${YR_ASSET_DIR}${n}.webp?v=2`),
+    ...months.map((m) => `${YR_ASSET_DIR}${YR_FLOWER_BY_MONTH[m].img}.webp?v=2`)
   ];
   const jobs = urls.map((url) => {
     const img = new Image();

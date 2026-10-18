@@ -1,10 +1,23 @@
 // Rebuild src/app.bundle.js (IIFE) from the ES module sources so index.html works via file://
 // Usage: node tools/build_bundle.js
+// - src/app.bundle.dev.js : bản chưa minify để debug (không deploy)
+// - src/app.bundle.js     : bản minify (esbuild trong tools/node_modules, cài bằng `npm install --prefix tools`)
+// - src/styles/main.min.css: CSS minify từ src/styles/main.css (index.html dùng bản này)
 const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const outFile = path.join(root, 'src', 'app.bundle.js');
+const devFile = path.join(root, 'src', 'app.bundle.dev.js');
+const cssIn = path.join(root, 'src', 'styles', 'main.css');
+const cssOut = path.join(root, 'src', 'styles', 'main.min.css');
+
+let esbuild = null;
+try {
+  esbuild = require(path.join(__dirname, 'node_modules', 'esbuild'));
+} catch (_) {
+  console.warn('! Chưa có esbuild (npm install --prefix tools) → ghi bản KHÔNG minify');
+}
 
 // Dependency order matters
 const files = [
@@ -37,5 +50,12 @@ for (const rel of files) {
   out += src.endsWith('\n') ? src : src + '\n';
 }
 out += '})();\r\n';
-fs.writeFileSync(outFile, out, { encoding: 'utf8' }); // UTF-8 without BOM
-console.log('Built', path.relative(root, outFile), '(' + out.length + ' chars)');
+fs.writeFileSync(devFile, out, { encoding: 'utf8' }); // UTF-8 without BOM
+const js = esbuild ? esbuild.transformSync(out, { minify: true, target: 'es2020', charset: 'utf8', legalComments: 'none' }).code : out;
+fs.writeFileSync(outFile, js, { encoding: 'utf8' });
+console.log('Built', path.relative(root, outFile), '(' + out.length + ' -> ' + js.length + ' chars)');
+
+const cssSrc = fs.readFileSync(cssIn, 'utf8').replace(/^﻿/, '');
+const css = esbuild ? esbuild.transformSync(cssSrc, { loader: 'css', minify: true, charset: 'utf8', target: ['chrome100', 'safari15', 'firefox100'] }).code : cssSrc;
+fs.writeFileSync(cssOut, css, { encoding: 'utf8' });
+console.log('Built', path.relative(root, cssOut), '(' + cssSrc.length + ' -> ' + css.length + ' chars)');

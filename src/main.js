@@ -19,7 +19,7 @@ import {
   getTabletopDioramaInfo
 } from './graphics/cardArtwork.js?v=25';
 import { ParticleSystem25D } from './graphics/particles25d.js?v=25';
-import { playYakuReveal } from './graphics/yakuReveal.js?v=25';
+import { playYakuReveal, warmYakuRevealAssets } from './graphics/yakuReveal.js?v=25';
 import { cardAnimator } from './graphics/cardAnimator.js?v=25';
 import { soundEngine, BGM_TRACKS } from './audio/soundEngine.js?v=25';
 import { KoiKoiEngine } from './engine/koiKoiEngine.js?v=25';
@@ -2216,7 +2216,7 @@ class HanaKoiApp {
           </div>
           <div class="modal-body">
             <div class="arena-hero-banner">
-              <img src="./public/assets/pvp_arena_banner.jpg" alt="PvP Online Banner" />
+              <img src="./public/assets/pvp_arena_banner.webp?v=2" alt="PvP Online Banner" />
               <div class="arena-hero-overlay">
                 <h3>⚔️ Đấu Trường Hoa Bài Trực Tuyến (PvP Online)</h3>
                 <p>Hệ thống tự động ghép cặp 2 người chơi đang tìm trận theo thời gian thực qua Server Database & kênh đồng bộ đa Tab tốc độ cao.</p>
@@ -2362,7 +2362,7 @@ class HanaKoiApp {
           </div>
           <div class="modal-body">
             <div class="arena-hero-banner">
-              <img src="./public/assets/pvp_arena_banner.jpg" alt="Custom Room Banner" />
+              <img src="./public/assets/pvp_arena_banner.webp?v=2" alt="Custom Room Banner" />
               <div class="arena-hero-overlay">
                 <h3>🏯 Phòng Trà Đạo Mã Số (Custom Room 2 Tab)</h3>
                 <p>Tạo mã phòng riêng ở Tab 1 rồi nhập mã số đó ở Tab 2 (hoặc bấm nút Mở Tab 2 tự động vào phòng) để chơi thử 2 người trực tiếp!</p>
@@ -3665,10 +3665,28 @@ class HanaKoiApp {
   }
 }
 
+// Sau khi trận đã hiện: tải ngầm font menu cài đặt (M PLUS 1p, CSS ~120 KB) + ảnh popup Yaku
+function warmDeferredAssets() {
+  const run = () => {
+    if (!document.getElementById('hk-font-ui')) {
+      const link = document.createElement('link');
+      link.id = 'hk-font-ui';
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=M+PLUS+1p:wght@400;500;700;800&display=swap';
+      document.head.appendChild(link);
+    }
+    warmYakuRevealAssets();
+  };
+  const start = () => setTimeout(run, 1500);
+  if (document.readyState === 'complete') start();
+  else window.addEventListener('load', start, { once: true });
+}
+
 function bootHanaKoiApp() {
   if (!window.hanaKoiApp) {
     initViewportScaler();
     window.hanaKoiApp = new HanaKoiApp();
+    warmDeferredAssets();
   }
 }
 

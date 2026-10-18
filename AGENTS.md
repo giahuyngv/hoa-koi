@@ -2,7 +2,8 @@
 
 ## Quy tắc
 - Trả lời tiếng Việt, ngắn gọn. Chỉ sửa trong thư mục dự án này.
-- Sửa `.js` trong `src/` → `node tools/build_bundle.js`, rồi tăng `?v=` của `app.bundle.js` và `main.css` trong `index.html` (bundle IIFE để chạy `file://`). Không sửa tay `app.bundle.js`.
+- Sửa `.js` trong `src/` hoặc `src/styles/main.css` → `node tools/build_bundle.js` (tạo `app.bundle.js` minify, `app.bundle.dev.js` để debug, `main.min.css`; lần đầu `npm install --prefix tools`), rồi tăng `?v=` của `app.bundle.js` và `main.min.css` trong `index.html` (bundle IIFE để chạy `file://`). Không sửa tay `app.bundle.js`/`main.min.css`.
+- Ảnh mới (.jpg/.png) trong characters, yaku_popup, diorama, cards, backs → `python tools/optimize_assets.py` (chuyển WebP, gốc vào `_backup_assets/`), tham chiếu `.webp?v=` và tăng `?v=` khi đổi ảnh (server cache 1 năm cho URL có `?v=`).
 - PowerShell ghi file: `[IO.File]::WriteAllText` + `UTF8Encoding($false)`, không `Set-Content`.
 - Deploy/Dockerfile/server.js bảo mật → dùng skill `hoakoi-deploy`.
 

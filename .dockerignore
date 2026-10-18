@@ -15,3 +15,7 @@ AGENTS.md
 cover_hoa_koi_16x9.jpg
 keyart_hoa_koi_1000x1250.jpg
 .zdeploy.yml
+_backup_assets
+src/app.bundle.dev.js
+PERF_REPORT.md
+PROMPT_*.md

@@ -1,0 +1,8 @@
+{
+  "name": "hoakoi-dev-tools",
+  "private": true,
+  "description": "Công cụ build chỉ dùng ở máy dev (không vào Docker image)",
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}
