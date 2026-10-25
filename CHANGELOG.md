@@ -18,7 +18,7 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Kết quả rút quẻ: thẻ đáp án thu nhỏ, 5 thẻ của lượt Rút 5 Quẻ nằm vừa một hàng (kèm tên và nhãn Mới/Trùng); trên điện thoại thẻ nhỏ hơn nữa.
 - Bảng kết quả tháng/chung cuộc: khung điểm "Tổng Điểm Bạn VS đối thủ" dùng nền washi be giống thẻ ghi chú phía trên.
 ### Sửa lỗi
-- PvP: máy đối thủ thấy animation đánh/bốc bài cả ở nước ăn bộ (Koi-Koi/Shōbu) và thấy hiệu ứng yaku; nước đi không còn bị bỏ qua khi đang chạy hiệu ứng; hỏi server mỗi 0,5s.
+- PvP: máy đối thủ thấy animation đánh/bốc bài cả ở nước ăn bộ (Koi-Koi/Shōbu) và thấy hiệu ứng yaku; nước đi không còn bị bỏ qua khi đang chạy hiệu ứng; hỏi server mỗi 0,5s. Ăn yaku là gửi ngay cho đối thủ (không chờ chọn Koi-Koi/Shōbu), đối thủ thấy dòng "đang cân nhắc".
 - Ảnh ống Rút 5 Quẻ còn sót mảng nền trắng giữa dây tua và thân ống, nay đã xóa sạch.
 - Ảnh thông (thong_dung_cao) tiểu cảnh tháng 1 thay mới nhưng bản deploy vẫn hiện ảnh cũ: URL ảnh month1 giữ `?v=1` nên trình duyệt dùng bản cache 1 năm; tăng lên `?v=2`.
 - Bảng kết quả tháng hoà hiện thừa chữ `(引き分け)">` ở góc trái trên: tiêu đề có thẻ HTML làm vỡ thuộc tính aria-label, nay bỏ thẻ HTML trước khi đưa vào aria-label.

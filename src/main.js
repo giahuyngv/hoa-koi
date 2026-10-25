@@ -524,6 +524,10 @@ class HanaKoiApp {
         return;
       }
 
+      if (lastAction?.type === 'YAKU_PENDING') {
+        this.currentDialogue = `${this.getOpponentDisplayName()} đang cân nhắc Koi-Koi hay Shōbu…`;
+      }
+
       if (prevPhase === 'AI_TURN' && this.engine.phase === 'PLAYER_HAND') {
         soundEngine.playCardHover();
         this.currentDialogue = `Đến lượt của bạn! Hãy chọn 1 lá bài trên tay để đánh.`;
@@ -2781,6 +2785,15 @@ class HanaKoiApp {
           evalResult: { yakus: yCheck.evalResult?.yakus || [] },
           prevSignature: yCheck.prevSignature || ''
         };
+        // Gửi ngay (không chờ chọn Koi-Koi/Shōbu) để đối thủ thấy nước đi + yaku cùng lúc
+        if (!yCheck.autoShobu) {
+          const canonical = this.engine.exportCanonicalState(multiplayerService.role, null);
+          multiplayerService.syncRoomState(canonical, {
+            ...this.pendingMpMoveAction,
+            type: 'YAKU_PENDING'
+          });
+          this.pendingMpMoveAction = null;
+        }
       }
       await this.safeAnimate(() => this.showYakuReveal(yCheck, 'player'));
       this.triggerOpponentTeaseLine(true);
