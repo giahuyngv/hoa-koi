@@ -60,7 +60,7 @@ export class MultiplayerService {
   }
 
   setPlayerName(newName) {
-    const clean = (newName || '').trim().slice(0, 24);
+    const clean = String(newName || '').replace(/[<>'"&]/g, '').trim().slice(0, 24);
     if (!clean) return;
     this.playerName = clean;
     try {
@@ -216,7 +216,7 @@ export class MultiplayerService {
         this.opponentName = msg.guestName;
       }
       if (this.onStateReceived && msg.gameState) {
-        this.onStateReceived(msg.gameState, msg.lastAction || null);
+        this.onStateReceived(msg.gameState, msg.lastAction || null, msg.version || this.lastVersion);
       }
       return;
     }
@@ -511,8 +511,25 @@ export class MultiplayerService {
   // =========================================================================
 
   async syncRoomState(canonicalState, lastAction = null) {
-    if (!this.roomCode) return;
+    if (!this.roomCode) return null;
+    // REMATCH: server tự chia bộ bài mới → gửi server trước, rồi phát đúng bộ bài server trả về
+    if (lastAction && lastAction.type === 'REMATCH') {
+      const room = await this.postRoomState(canonicalState, lastAction);
+      if (room && room.gameState) {
+        canonicalState = room.gameState;
+        this.lastVersion = Math.max(this.lastVersion || 1, (room.version || 1) - 1);
+      }
+      this.lastVersion = (this.lastVersion || 1) + 1;
+      this.broadcastRoomState(canonicalState, lastAction);
+      return room && room.gameState ? room.gameState : null;
+    }
     this.lastVersion = (this.lastVersion || 1) + 1;
+    this.broadcastRoomState(canonicalState, lastAction);
+    await this.postRoomState(canonicalState, lastAction);
+    return null;
+  }
+
+  broadcastRoomState(canonicalState, lastAction) {
 
     // 1. Instant cross-tab broadcast
     this.broadcastMessage({
@@ -533,10 +550,12 @@ export class MultiplayerService {
     existing.version = this.lastVersion;
     existing.status = 'playing';
     this.writeLocalRoom(this.roomCode, existing);
+  }
 
-    // 3. Backend DB persistence
+  // 3. Backend DB persistence → trả về room server (null nếu offline/static)
+  async postRoomState(canonicalState, lastAction) {
     try {
-      await fetch(`/api/rooms/${encodeURIComponent(this.roomCode)}/state`, {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(this.roomCode)}/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -546,8 +565,12 @@ export class MultiplayerService {
           status: 'playing'
         })
       });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data && data.room ? data.room : null;
     } catch {
       // Handled by local fallback
+      return null;
     }
   }
 
@@ -598,7 +621,7 @@ export class MultiplayerService {
         if (room.version && room.version > this.lastVersion && room.gameState) {
           this.lastVersion = room.version;
           if (this.onStateReceived) {
-            this.onStateReceived(room.gameState, room.lastAction || null);
+            this.onStateReceived(room.gameState, room.lastAction || null, room.version);
           }
         }
       } catch {

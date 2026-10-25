@@ -1,6 +1,15 @@
 // 2.5D Ambient, Tabletop-Landing & Impact Particle Renderer
 // Supports all 12 Hanafuda Month Floral Themes + Legacy Opponent Particle Themes
 
+import { isPerfLow } from '../ui/viewportScaler.js?v=26';
+
+// Ngân sách hạt: perf-low (iOS / màn cảm ứng) giảm một nửa, DPR canvas giới hạn 1 / 2,
+// perf-low vẽ ~30 khung/giây (canvas toàn màn hình, vẽ lại mỗi khung rất nặng trên iPad)
+const PARTICLE_BUDGET = {
+  high: { ambient: 20, landed: 10, burst: 1, dpr: 2, frameMs: 0 },
+  low: { ambient: 9, landed: 4, burst: 0.5, dpr: 1, frameMs: 28 }
+};
+
 const MONTH_PARTICLE_MAP = {
   1: 'matsu',
   2: 'ume',
@@ -16,6 +25,9 @@ const MONTH_PARTICLE_MAP = {
   12: 'kiri'
 };
 
+// Tháng có tiểu cảnh không dùng hạt rơi nền (tháng 1 Tùng Hạc: không có cánh hoa rơi)
+const MONTH_NO_AMBIENT = new Set([1]);
+
 export class ParticleSystem25D {
   constructor(canvas) {
     this.canvas = canvas;
@@ -26,6 +38,11 @@ export class ParticleSystem25D {
     this.landedParticles = [];
     this.burstParticles = [];
     this.running = false;
+    this.occluded = false;
+    this.rafId = 0;
+    this.low = isPerfLow();
+    this.budget = this.low ? PARTICLE_BUDGET.low : PARTICLE_BUDGET.high;
+    this.dpr = 1;
     this.width = window.innerWidth;
     this.height = window.innerHeight;
 
@@ -44,18 +61,45 @@ export class ParticleSystem25D {
 
     this.handleResize = () => {
       if (!this.canvas) return;
-      this.width = this.canvas.width = window.innerWidth;
-      this.height = this.canvas.height = window.innerHeight;
+      this.width = window.innerWidth;
+      this.height = window.innerHeight;
+      this.dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, this.budget.dpr));
+      this.canvas.width = Math.round(this.width * this.dpr);
+      this.canvas.height = Math.round(this.height * this.dpr);
+      // Vẽ theo px CSS, canvas tự nhân DPR
+      this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.wake();
     };
     window.addEventListener('resize', this.handleResize);
+
+    // Đổi chế độ đồ họa: cập nhật DPR + số hạt ngay
+    this.handlePerfMode = (e) => {
+      this.low = !!(e && e.detail ? e.detail.low : isPerfLow());
+      this.budget = this.low ? PARTICLE_BUDGET.low : PARTICLE_BUDGET.high;
+      this.handleResize();
+      this.initAmbient();
+      if (this.landedParticles.length > this.budget.landed) {
+        this.landedParticles.splice(0, this.landedParticles.length - this.budget.landed);
+      }
+    };
+    window.addEventListener('hk-perfmodechange', this.handlePerfMode);
+
     this.handleResize();
-    this.initAmbient(20);
+    this.initAmbient();
   }
 
   setTheme(theme) {
     this.theme = theme || 'kiku';
     this.landedParticles = [];
-    this.initAmbient(20);
+    this.initAmbient();
+  }
+
+  /** Canvas bị che (modal toàn màn hình...): bỏ hạt nền, chỉ chạy burst rồi dừng loop */
+  setOccluded(flag) {
+    flag = !!flag;
+    if (this.occluded === flag) return;
+    this.occluded = flag;
+    if (!flag) this.wake();
   }
 
   setMonthTheme(monthNumber = 9) {
@@ -63,14 +107,16 @@ export class ParticleSystem25D {
     this.monthNumber = m;
     this.theme = MONTH_PARTICLE_MAP[m] || 'kiku';
     this.landedParticles = [];
-    this.initAmbient(20);
+    this.initAmbient();
   }
 
-  initAmbient(count = 20) {
+  initAmbient(count = this.budget.ambient) {
     this.ambientParticles = [];
+    if (MONTH_NO_AMBIENT.has(this.monthNumber)) count = 0;
     for (let i = 0; i < count; i++) {
       this.ambientParticles.push(this.createAmbientParticle(true));
     }
+    this.wake();
   }
 
   createAmbientParticle(randomY = false) {
@@ -120,7 +166,8 @@ export class ParticleSystem25D {
   }
 
   spawnLandedParticle(p) {
-    if (this.landedParticles.length >= 10) {
+    if (this.budget.landed <= 0) return;
+    while (this.landedParticles.length >= this.budget.landed) {
       this.landedParticles.shift();
     }
     const isWaterRipple = this.theme === 'yanagi' || this.theme === 'ayame';
@@ -142,6 +189,7 @@ export class ParticleSystem25D {
    * Triggers a celebratory burst at screen coordinates (x, y) when cards are captured or Yaku is formed
    */
   triggerBurst(x, y, color = '#ffd166', count = 26) {
+    count = Math.max(6, Math.round(count * this.budget.burst));
     for (let i = 0; i < count; i++) {
       const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.3;
       const speed = 2.2 + Math.random() * 6.5;
@@ -156,40 +204,59 @@ export class ParticleSystem25D {
         decay: 0.02 + Math.random() * 0.02
       });
     }
+    this.wake();
   }
 
   start() {
     if (this.running) return;
     this.running = true;
-    let lastTime = performance.now();
-    const tick = (now) => {
-      if (!this.running) return;
-      // Tab ẩn: dừng hẳn vòng lặp, chạy lại khi tab hiện (xem visibilitychange bên dưới)
-      if (document.hidden) {
-        this.pausedByVisibility = true;
-        return;
-      }
-      const dt = Math.min(0.05, (now - lastTime) * 0.001);
-      lastTime = now;
-      this.updateAndDraw(now * 0.001, dt);
-      requestAnimationFrame(tick);
-    };
     if (!this.handleVisibility) {
       this.handleVisibility = () => {
-        if (!document.hidden && this.running && this.pausedByVisibility) {
-          this.pausedByVisibility = false;
-          lastTime = performance.now();
-          requestAnimationFrame(tick);
-        }
+        if (!document.hidden) this.wake();
       };
       document.addEventListener('visibilitychange', this.handleVisibility);
     }
-    requestAnimationFrame(tick);
+    this.wake();
   }
 
   stop() {
     this.running = false;
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = 0;
   }
+
+  hasWork() {
+    if (this.burstParticles.length > 0) return true;
+    if (this.occluded) return false;
+    return this.ambientParticles.length > 0 || this.landedParticles.length > 0;
+  }
+
+  /**
+   * Chạy loop nếu đang dừng. Loop tự dừng khi tab ẩn, canvas bị che hoặc không còn hạt;
+   * triggerBurst / setOccluded(false) / initAmbient / resize sẽ gọi lại.
+   */
+  wake() {
+    if (!this.running || this.rafId || document.hidden || !this.hasWork()) return;
+    this.lastTime = performance.now();
+    this.rafId = requestAnimationFrame(this.tick);
+  }
+
+  tick = (now) => {
+    this.rafId = 0;
+    if (!this.running || document.hidden) return;
+    if (!this.hasWork()) {
+      this.ctx.clearRect(0, 0, this.width, this.height);
+      return;
+    }
+    if (now - this.lastTime < this.budget.frameMs) {
+      this.rafId = requestAnimationFrame(this.tick);
+      return;
+    }
+    const dt = Math.min(0.05, (now - this.lastTime) * 0.001);
+    this.lastTime = now;
+    this.updateAndDraw(now * 0.001, dt);
+    this.rafId = requestAnimationFrame(this.tick);
+  };
 
   drawSingleFloraMotif(ctx, size, variant = 0, isLanded = false) {
     switch (this.theme) {
@@ -251,7 +318,7 @@ export class ParticleSystem25D {
         if (variant === 0) {
           ctx.fillStyle = '#4cc9f0';
           ctx.shadowColor = '#4895ef';
-          ctx.shadowBlur = isLanded ? 2 : 6;
+          ctx.shadowBlur = this.low ? 0 : isLanded ? 2 : 6;
           ctx.beginPath();
           ctx.arc(0, 0, size * 0.36, 0, Math.PI * 2);
           ctx.fill();
@@ -310,7 +377,7 @@ export class ParticleSystem25D {
         if (variant === 0) {
           ctx.fillStyle = '#fff3b0';
           ctx.shadowColor = '#ffd166';
-          ctx.shadowBlur = isLanded ? 2 : 7;
+          ctx.shadowBlur = this.low ? 0 : isLanded ? 2 : 7;
           ctx.beginPath();
           ctx.arc(0, 0, size * 0.34, 0, Math.PI * 2);
           ctx.fill();
@@ -335,7 +402,7 @@ export class ParticleSystem25D {
           const w = h * (sprite.naturalWidth / sprite.naturalHeight);
           if (isLanded) {
             ctx.shadowColor = 'rgba(20, 10, 5, 0.42)';
-            ctx.shadowBlur = 3;
+            ctx.shadowBlur = this.low ? 0 : 3;
             ctx.shadowOffsetY = 2;
           }
           ctx.drawImage(sprite, -w * 0.5, -h * 0.5, w, h);
@@ -401,7 +468,7 @@ export class ParticleSystem25D {
         if (variant === 0) {
           ctx.fillStyle = '#ffd166';
           ctx.shadowColor = '#f48c06';
-          ctx.shadowBlur = isLanded ? 3 : 8;
+          ctx.shadowBlur = this.low ? 0 : isLanded ? 3 : 8;
           ctx.beginPath();
           ctx.ellipse(0, 0, size * 0.28, size * 0.75, 0, 0, Math.PI * 2);
           ctx.fill();
@@ -433,7 +500,7 @@ export class ParticleSystem25D {
       case 'lantern':
         ctx.fillStyle = this.theme === 'spiritfire' ? '#2b9348' : '#e85d04';
         ctx.shadowColor = this.theme === 'spiritfire' ? '#52b788' : '#ff9e00';
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = this.low ? 0 : 8;
         ctx.beginPath();
         ctx.arc(0, 0, size * 0.42, 0, Math.PI * 2);
         ctx.fill();
@@ -464,8 +531,10 @@ export class ParticleSystem25D {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
 
+    const drawScene = !this.occluded;
+
     // 1. Draw Landed Petals / Water Ripples Resting on the 2.5D Tabletop
-    for (let i = this.landedParticles.length - 1; i >= 0; i--) {
+    for (let i = drawScene ? this.landedParticles.length - 1 : -1; i >= 0; i--) {
       const lp = this.landedParticles[i];
       lp.age += dt;
       if (lp.age >= lp.maxLife) {
@@ -504,7 +573,7 @@ export class ParticleSystem25D {
     }
 
     // 2. Ambient Airborne Particles (Flying & Landing on Tabletop)
-    for (let p of this.ambientParticles) {
+    for (let p of drawScene ? this.ambientParticles : []) {
       const windSway = this.theme === 'yanagi' ? 0.1 : Math.sin(t * 1.3 + p.swayOffset) * 0.55;
       p.x += p.speedX + windSway;
       p.y += p.speedY;
@@ -545,10 +614,12 @@ export class ParticleSystem25D {
     // 3. Celebratory Impact Burst Particles
     for (let i = this.burstParticles.length - 1; i >= 0; i--) {
       const b = this.burstParticles[i];
-      b.x += b.vx;
-      b.y += b.vy;
-      b.vy += 0.14;
-      b.alpha -= b.decay;
+      // Bước vật lý tính theo khung 60fps; nhân k để perf-low (~30fps) bay cùng tốc độ
+      const k = this.low ? dt * 60 : 1;
+      b.x += b.vx * k;
+      b.y += b.vy * k;
+      b.vy += 0.14 * k;
+      b.alpha -= b.decay * k;
 
       if (b.alpha <= 0) {
         this.burstParticles.splice(i, 1);
@@ -559,7 +630,7 @@ export class ParticleSystem25D {
       ctx.globalAlpha = Math.max(0, b.alpha);
       ctx.fillStyle = b.color;
       ctx.shadowColor = b.color;
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = this.low ? 0 : 8;
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
       ctx.fill();

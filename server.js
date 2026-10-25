@@ -57,7 +57,11 @@ const MIME_TYPES = Object.freeze({
   '.gif': 'image/gif',
   '.ico': 'image/x-icon',
   '.woff': 'font/woff',
-  '.woff2': 'font/woff2'
+  '.woff2': 'font/woff2',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4'
 });
 
 const SECURITY_HEADERS = Object.freeze({
@@ -69,7 +73,7 @@ const SECURITY_HEADERS = Object.freeze({
   'Cross-Origin-Resource-Policy': 'same-origin',
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   'Content-Security-Policy':
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' data: blob:; frame-ancestors 'self' https://innovation-center.zingplay.dev; base-uri 'self'; form-action 'self'"
 });
 
 function escapeHtml(str) {
@@ -336,6 +340,160 @@ function randomDigits(len = 4) {
   return s;
 }
 
+// 48 lá bài Hanafuda tóm tắt để máy chủ tính toán thẩm quyền luật Oya Kime (Chọn người đi trước)
+const HANAFUDA_DECK_DEF = Object.freeze([
+  { id: 1, month: 1, type: 'hikari', points: 20 },
+  { id: 2, month: 1, type: 'tanzaku', points: 5 },
+  { id: 3, month: 1, type: 'kasu', points: 1 },
+  { id: 4, month: 1, type: 'kasu', points: 1 },
+  { id: 5, month: 2, type: 'tane', points: 10 },
+  { id: 6, month: 2, type: 'tanzaku', points: 5 },
+  { id: 7, month: 2, type: 'kasu', points: 1 },
+  { id: 8, month: 2, type: 'kasu', points: 1 },
+  { id: 9, month: 3, type: 'hikari', points: 20 },
+  { id: 10, month: 3, type: 'tanzaku', points: 5 },
+  { id: 11, month: 3, type: 'kasu', points: 1 },
+  { id: 12, month: 3, type: 'kasu', points: 1 },
+  { id: 13, month: 4, type: 'tane', points: 10 },
+  { id: 14, month: 4, type: 'tanzaku', points: 5 },
+  { id: 15, month: 4, type: 'kasu', points: 1 },
+  { id: 16, month: 4, type: 'kasu', points: 1 },
+  { id: 17, month: 5, type: 'tane', points: 10 },
+  { id: 18, month: 5, type: 'tanzaku', points: 5 },
+  { id: 19, month: 5, type: 'kasu', points: 1 },
+  { id: 20, month: 5, type: 'kasu', points: 1 },
+  { id: 21, month: 6, type: 'tane', points: 10 },
+  { id: 22, month: 6, type: 'tanzaku', points: 5 },
+  { id: 23, month: 6, type: 'kasu', points: 1 },
+  { id: 24, month: 6, type: 'kasu', points: 1 },
+  { id: 25, month: 7, type: 'tane', points: 10 },
+  { id: 26, month: 7, type: 'tanzaku', points: 5 },
+  { id: 27, month: 7, type: 'kasu', points: 1 },
+  { id: 28, month: 7, type: 'kasu', points: 1 },
+  { id: 29, month: 8, type: 'hikari', points: 20 },
+  { id: 30, month: 8, type: 'tane', points: 10 },
+  { id: 31, month: 8, type: 'kasu', points: 1 },
+  { id: 32, month: 8, type: 'kasu', points: 1 },
+  { id: 33, month: 9, type: 'tane', points: 10 },
+  { id: 34, month: 9, type: 'tanzaku', points: 5 },
+  { id: 35, month: 9, type: 'kasu', points: 1 },
+  { id: 36, month: 9, type: 'kasu', points: 1 },
+  { id: 37, month: 10, type: 'tane', points: 10 },
+  { id: 38, month: 10, type: 'tanzaku', points: 5 },
+  { id: 39, month: 10, type: 'kasu', points: 1 },
+  { id: 40, month: 10, type: 'kasu', points: 1 },
+  { id: 41, month: 11, type: 'hikari', points: 20 },
+  { id: 42, month: 11, type: 'tane', points: 10 },
+  { id: 43, month: 11, type: 'tanzaku', points: 5 },
+  { id: 44, month: 11, type: 'kasu', points: 1 },
+  { id: 45, month: 12, type: 'hikari', points: 20 },
+  { id: 46, month: 12, type: 'kasu', points: 1 },
+  { id: 47, month: 12, type: 'kasu', points: 1 },
+  { id: 48, month: 12, type: 'kasu', points: 1 }
+]);
+
+function compareDealerCards(cardA, cardB) {
+  if (!cardA || !cardB) return 0;
+  if (cardA.month !== cardB.month) {
+    return cardA.month - cardB.month;
+  }
+  const ptsA = Number(cardA.points) || 1;
+  const ptsB = Number(cardB.points) || 1;
+  if (ptsA !== ptsB) {
+    return ptsB - ptsA;
+  }
+  return 0;
+}
+
+function generateServerDealerDraw() {
+  let cardA, cardB;
+  let diff = 0;
+  while (diff === 0) {
+    const idxA = crypto.randomInt(0, HANAFUDA_DECK_DEF.length);
+    let idxB = crypto.randomInt(0, HANAFUDA_DECK_DEF.length);
+    while (idxB === idxA) {
+      idxB = crypto.randomInt(0, HANAFUDA_DECK_DEF.length);
+    }
+    cardA = HANAFUDA_DECK_DEF[idxA];
+    cardB = HANAFUDA_DECK_DEF[idxB];
+    diff = compareDealerCards(cardA, cardB);
+  }
+
+  const winnerRole = diff < 0 ? 'p1' : 'p2';
+  const winnerSide = diff < 0 ? 'left' : 'right';
+
+  return {
+    cardLeftId: cardA.id,
+    cardRightId: cardB.id,
+    p1CardId: cardA.id,
+    p2CardId: cardB.id,
+    p1Side: 'left',
+    p2Side: 'right',
+    winnerRole,
+    winnerSide,
+    monthA: cardA.month,
+    monthB: cardB.month
+  };
+}
+
+function createServerInitialMatchState(totalRounds = 3) {
+  const dealerDraw = generateServerDealerDraw();
+  const dealerRole = dealerDraw.winnerRole;
+
+  let validDeal = false;
+  let p1Hand = [], p2Hand = [], field = [], deck = [];
+  while (!validDeal) {
+    const shuffled = [...HANAFUDA_DECK_DEF];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = crypto.randomInt(0, i + 1);
+      const tmp = shuffled[i];
+      shuffled[i] = shuffled[j];
+      shuffled[j] = tmp;
+    }
+    p1Hand = shuffled.slice(0, 8).sort((a, b) => a.month - b.month || b.points - a.points);
+    p2Hand = shuffled.slice(8, 16);
+    field = shuffled.slice(16, 24);
+    deck = shuffled.slice(24);
+
+    const fieldMonths = {};
+    for (const c of field) {
+      fieldMonths[c.month] = (fieldMonths[c.month] || 0) + 1;
+    }
+    const hasFourOnField = Object.values(fieldMonths).includes(4);
+    if (!hasFourOnField) {
+      validDeal = true;
+    }
+  }
+
+  const fieldSlots = Array(12).fill(null);
+  for (let i = 0; i < 8; i++) {
+    fieldSlots[i] = field[i] || null;
+  }
+
+  return {
+    totalRounds,
+    currentRound: 1,
+    dealerRole,
+    activeTurn: dealerRole,
+    subPhase: 'HAND',
+    deck,
+    field,
+    fieldSlots,
+    p1Hand,
+    p2Hand,
+    p1Captured: [],
+    p2Captured: [],
+    p1Score: 0,
+    p2Score: 0,
+    p1LastYakuSig: '',
+    p2LastYakuSig: '',
+    p1CalledKoiKoi: false,
+    p2CalledKoiKoi: false,
+    dealerDraw,
+    roundSummary: null
+  };
+}
+
 function sendJson(res, payload, status = 200) {
   const raw = Buffer.from(JSON.stringify(payload, null, 2), 'utf8');
   res.writeHead(status, {
@@ -547,6 +705,7 @@ const server = http.createServer(async (req, res) => {
       for (const [otherId, otherInfo] of Object.entries(queue)) {
         if (otherId !== playerId && !otherInfo.matchedRoomCode) {
           const code = 'PVP' + randomDigits(4);
+          const initialMatchState = createServerInitialMatchState(3);
           const room = {
             roomCode: code,
             mode: 'pvp',
@@ -556,8 +715,8 @@ const server = http.createServer(async (req, res) => {
             guestId: playerId,
             guestName: playerName,
             version: 1,
-            gameState: null,
-            lastAction: null,
+            gameState: initialMatchState,
+            lastAction: { type: 'MATCH_START' },
             createdAt: new Date().toISOString(),
             updatedAtEpoch: now
           };
@@ -608,6 +767,16 @@ const server = http.createServer(async (req, res) => {
       while (!requestedCode && Object.hasOwn(store.rooms, code)) {
         code = randomDigits(4);
       }
+      let initialGameState =
+        body.gameState && typeof body.gameState === 'object' ? body.gameState : null;
+      if (!initialGameState) {
+        initialGameState = createServerInitialMatchState(3);
+      } else if (!initialGameState.dealerDraw || initialGameState.currentRound === 1) {
+        const dealerDraw = generateServerDealerDraw();
+        initialGameState.dealerDraw = dealerDraw;
+        initialGameState.dealerRole = dealerDraw.winnerRole;
+        initialGameState.activeTurn = dealerDraw.winnerRole;
+      }
       const room = {
         roomCode: code,
         mode: body.mode === 'pvp' ? 'pvp' : 'custom',
@@ -617,7 +786,7 @@ const server = http.createServer(async (req, res) => {
         guestId: null,
         guestName: null,
         version: 1,
-        gameState: body.gameState && typeof body.gameState === 'object' ? body.gameState : null,
+        gameState: initialGameState,
         lastAction: null,
         createdAt: new Date().toISOString(),
         updatedAtEpoch: now
@@ -643,6 +812,15 @@ const server = http.createServer(async (req, res) => {
       room.guestId = guestId;
       room.guestName = guestName;
       room.status = 'playing';
+      // Đảm bảo ván 1 có dealerDraw hợp lệ do server thẩm quyền
+      if (room.gameState && (!room.gameState.dealerDraw || room.gameState.currentRound === 1)) {
+        if (!room.gameState.dealerDraw) {
+          const dealerDraw = generateServerDealerDraw();
+          room.gameState.dealerDraw = dealerDraw;
+          room.gameState.dealerRole = dealerDraw.winnerRole;
+          room.gameState.activeTurn = dealerDraw.winnerRole;
+        }
+      }
       room.version = (room.version || 1) + 1;
       room.updatedAtEpoch = now;
       writeJsonStore(store);
@@ -653,11 +831,17 @@ const server = http.createServer(async (req, res) => {
       const code = sanitizeRoomCode(reqPath.slice('/api/rooms/'.length, -'/state'.length));
       const room = code && Object.hasOwn(store.rooms, code) ? store.rooms[code] : null;
       if (!room) return sendJson(res, { error: 'Room not found' }, 404);
-      if (body.gameState !== undefined && (body.gameState === null || typeof body.gameState === 'object')) {
-        room.gameState = body.gameState;
-      }
-      if (body.lastAction !== undefined && (body.lastAction === null || typeof body.lastAction === 'object')) {
+      if (body.lastAction && body.lastAction.type === 'REMATCH') {
+        const totalRounds = (body.gameState && body.gameState.totalRounds) || 3;
+        room.gameState = createServerInitialMatchState(totalRounds);
         room.lastAction = body.lastAction;
+      } else {
+        if (body.gameState !== undefined && (body.gameState === null || typeof body.gameState === 'object')) {
+          room.gameState = body.gameState;
+        }
+        if (body.lastAction !== undefined && (body.lastAction === null || typeof body.lastAction === 'object')) {
+          room.lastAction = body.lastAction;
+        }
       }
       if (typeof body.status === 'string' && ['waiting', 'playing', 'finished'].includes(body.status)) {
         room.status = body.status;

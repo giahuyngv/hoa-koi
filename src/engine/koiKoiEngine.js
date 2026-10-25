@@ -3,6 +3,25 @@
 import { HANAFUDA_CARDS } from '../data/cardsData.js';
 import { evaluateCapturedYaku, checkInitialHandYaku } from '../data/yakuData.js';
 
+/**
+ * So sánh 2 lá bài để chọn người đi trước (親決め - Oya Kime):
+ * 1. Tháng nhỏ hơn đi trước (Tháng 1 < Tháng 2 < ... < Tháng 12)
+ * 2. Cùng tháng: So điểm lá bài (Hikari 20 > Tane 10 > Tanzaku 5 > Kasu 1)
+ * Trả về < 0 nếu cardA thắng, > 0 nếu cardB thắng, 0 nếu hòa (cần bốc lại).
+ */
+export function compareDealerCards(cardA, cardB) {
+  if (!cardA || !cardB) return 0;
+  if (cardA.month !== cardB.month) {
+    return cardA.month - cardB.month;
+  }
+  const ptsA = Number(cardA.points) || 1;
+  const ptsB = Number(cardB.points) || 1;
+  if (ptsA !== ptsB) {
+    return ptsB - ptsA;
+  }
+  return 0;
+}
+
 export class KoiKoiEngine {
   constructor() {
     this.totalRounds = 3;
@@ -34,6 +53,7 @@ export class KoiKoiEngine {
     this.matchingFieldCandidates = [];
     this.drawnCard = null;
     this.pendingYakuEvaluation = null;
+    this.dealerDraw = null;
   }
 
   startNewMatch(totalRounds = 3) {
@@ -49,7 +69,12 @@ export class KoiKoiEngine {
     // Shuffle until neither field nor hands have 4-of-a-month or 4-pairs so every round is playable
     let validDeal = false;
     while (!validDeal) {
-      const shuffled = [...HANAFUDA_CARDS].sort(() => Math.random() - 0.5);
+      // Fisher-Yates: xáo đều (sort + Math.random bị lệch, lá dễ giữ gần vị trí cũ)
+      const shuffled = [...HANAFUDA_CARDS];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
       this.playerHand = shuffled
         .slice(0, 8)
         .sort((a, b) => a.month - b.month || b.points - a.points);
@@ -94,6 +119,11 @@ export class KoiKoiEngine {
     this.matchingFieldCandidates = [];
     this.pendingYakuEvaluation = null;
 
+    this.phase = this.dealer === 'player' ? 'PLAYER_HAND' : 'AI_TURN';
+  }
+
+  setDealer(role) {
+    this.dealer = role === 'ai' ? 'ai' : 'player';
     this.phase = this.dealer === 'player' ? 'PLAYER_HAND' : 'AI_TURN';
   }
 
@@ -649,6 +679,7 @@ export class KoiKoiEngine {
       p2LastYakuSig: isHost ? this.aiLastYakuSig : this.playerLastYakuSig,
       p1CalledKoiKoi: isHost ? this.playerCalledKoiKoi : this.aiCalledKoiKoi,
       p2CalledKoiKoi: isHost ? this.aiCalledKoiKoi : this.playerCalledKoiKoi,
+      dealerDraw: this.dealerDraw || null,
       roundSummary: canonicalSummary
     };
   }
@@ -660,6 +691,7 @@ export class KoiKoiEngine {
 
     this.totalRounds = canonical.totalRounds || 3;
     this.currentRound = canonical.currentRound || 1;
+    this.dealerDraw = canonical.dealerDraw || null;
     this.deck = [...(canonical.deck || [])];
     this.field = [...(canonical.field || [])];
     if (Array.isArray(canonical.fieldSlots) && canonical.fieldSlots.length >= 8) {

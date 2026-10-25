@@ -243,6 +243,13 @@ function yrShowOne(root, yaku, opts, index, total) {
     const doc = new DOMParser().parseFromString(yrBuildMarkup(yaku, opts, index, total), 'text/html');
     root.replaceChildren(...Array.from(doc.body.childNodes));
     const overlay = root.querySelector('.yaku-reveal-overlay');
+    if (typeof opts.onShow === 'function') {
+      try {
+        opts.onShow(yaku, index);
+      } catch {
+        // Ignore audio callback errors
+      }
+    }
     let done = false;
     let leaveTimer = 0;
 
@@ -278,7 +285,7 @@ function yrShowOne(root, yaku, opts, index, total) {
 /**
  * Trình diễn lần lượt từng bộ vừa ăn. Trả về Promise khi popup đóng hẳn.
  * @param {Array} yakus - phần tử từ evaluateCapturedYaku().yakus
- * @param {{short?: boolean, actorName?: string, skinId?: string, durationMs?: number}} options
+ * @param {{short?: boolean, actorName?: string, skinId?: string, durationMs?: number, onShow?: Function}} options
  */
 export async function playYakuReveal(yakus, options = {}) {
   const list = (yakus || []).filter(Boolean);
@@ -287,7 +294,8 @@ export async function playYakuReveal(yakus, options = {}) {
     short: !!options.short,
     actorName: options.actorName || '',
     skinId: options.skinId || 'skin_traditional_edo',
-    durationMs: options.durationMs || (options.short ? 2000 : 2800)
+    durationMs: options.durationMs || (options.short ? 2000 : 2800),
+    onShow: options.onShow || null
   };
   const root = yrEnsureRoot();
   try {

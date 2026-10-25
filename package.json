@@ -1,6 +1,6 @@
 {
   "name": "hoa-koi-hanafuda",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "HOA KOI (花恋) - Game Bài Hoa Nhật Bản Koi-Koi 2.5D",
   "main": "server.js",
   "scripts": {

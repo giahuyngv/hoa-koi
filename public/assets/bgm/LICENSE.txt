@@ -1,0 +1,8 @@
+Background Music Tracks (minamo.mp3, minamo2.mp3, shizima2.mp3)
+Composer / Source: PeriTune (Sei Mutsuki - https://peritune.com/)
+Tracks:
+- minamo.mp3 ("Minamo" - PerituneMaterial_Minamo.mp3)
+- minamo2.mp3 ("Minamo2" - PerituneMaterial_Minamo2.mp3)
+- shizima2.mp3 ("Shizima2" - PerituneMaterial_Shizima2.mp3)
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://peritune.com/terms/

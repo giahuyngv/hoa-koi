@@ -2,25 +2,78 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a0f0a" />
+    <link rel="manifest" href="./public/manifest.json" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="screen-orientation" content="landscape" />
     <title>HOA KOI (花恋) - Đấu Bài Hoa Nhật Bản</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;600;700;800;900&family=Noto+Serif+JP:wght@500;700&family=Playfair+Display:wght@700&family=Yuji+Boku&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;600;700;800&family=Noto+Serif:wght@400;600;700;800;900&family=Noto+Serif+JP:wght@500;700&family=Playfair+Display:wght@700&family=Yuji+Boku&display=swap"
       rel="stylesheet"
     />
     <!-- Yuji Syuku chỉ dùng cho "(こいこい)" ở cut-in → chỉ tải đúng các ký tự đó. M PLUS 1p (menu ⚙) tải ngầm sau khi vào trận (main.js) -->
     <link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&text=(%E3%81%93%E3%81%84)&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./src/styles/main.min.css?v=90" />
+    <link rel="stylesheet" href="./src/styles/main.min.css?v=139" />
+    <link rel="stylesheet" href="./src/styles/mobile-compact.min.css?v=26" />
+    <!-- Màn hình loading (inline để hiện ngay, trước khi CSS/bundle tải xong) -->
+    <style>
+      html.hk-booting #app, html.hk-booting #particle-canvas { opacity: 0; }
+      #app, #particle-canvas { transition: opacity .9s ease .15s; }
+      #hk-loader {
+        --ink: #2a1a12; --ink-soft: #5b4636; --gold: #b8862b; --red: #c0392b; --veil: rgba(250,244,230,.35); --track: rgba(42,26,18,.18);
+        position: fixed; inset: 0; z-index: 99999; overflow: hidden;
+        background: #f5ebd6 url('./public/assets/bg_ukiyo_day.webp?v=1') center / cover no-repeat;
+        color: var(--ink); font-family: 'Be Vietnam Pro', system-ui, sans-serif;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: min(3.2vh, 22px);
+        text-align: center; transition: opacity .8s ease, transform .9s ease, filter .8s ease;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+      #hk-loader.night {
+        --ink: #f3e9d2; --ink-soft: #c9bba0; --gold: #e3b75a; --red: #ff6b5a; --veil: rgba(10,8,25,.3); --track: rgba(243,233,210,.2);
+        background-color: #1d1628; background-image: url('./public/assets/bg_ukiyo_night.webp?v=1');
+      }
+      #hk-loader::before { content: ""; position: absolute; inset: 0; background: var(--veil); pointer-events: none; }
+      #hk-loader > * { position: relative; }
+      #hk-loader.out { opacity: 0; transform: scale(1.06); filter: blur(4px); pointer-events: none; }
+      #hk-loader canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      .hkl-logo { display: flex; align-items: baseline; gap: .4em; line-height: 1; }
+      .hkl-logo b { font: 400 min(13vh, 72px) 'Yuji Boku', 'Noto Serif JP', serif; color: var(--red); }
+      .hkl-logo span { font: 800 min(5vh, 28px) 'Noto Serif', Georgia, serif; letter-spacing: .18em; }
+      .hkl-cards { display: flex; gap: min(1.6vw, 14px); perspective: 900px; height: min(34vh, 30vw, 190px); }
+      .hkl-card { height: 100%; aspect-ratio: 330 / 541; position: relative; transform-style: preserve-3d; transition: transform .7s cubic-bezier(.3, 1.4, .5, 1); }
+      .hkl-card img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 6% / 3.6%; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+      .hkl-card .face { transform: rotateY(180deg); }
+      .hkl-card.on { transform: rotateY(180deg) translateY(-4%); }
+      .hkl-card.done .face { animation: hkl-glow 1.2s ease-in-out infinite alternate; }
+      @keyframes hkl-glow { to { box-shadow: 0 0 18px 3px var(--gold); } }
+      .hkl-yaku { display: flex; flex-direction: column; gap: 2px; min-height: 3em; }
+      .hkl-yaku .jp { font: 400 min(6vh, 34px) 'Yuji Boku', 'Noto Serif JP', serif; color: var(--gold); }
+      .hkl-yaku .jp i { font: italic 600 .62em 'Noto Serif', Georgia, serif; margin-left: .5em; color: var(--ink-soft); }
+      .hkl-yaku .vi { font: 600 min(3.4vh, 17px) 'Noto Serif', Georgia, serif; color: var(--ink-soft); }
+      .hkl-bar { width: min(52vw, 420px); display: flex; flex-direction: column; gap: 6px; }
+      .hkl-track { height: 6px; border-radius: 6px; background: var(--track); overflow: hidden; }
+      .hkl-fill { height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, var(--red), var(--gold)); }
+      .hkl-status { display: flex; justify-content: space-between; font-size: min(2.8vh, 13px); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+      @media (prefers-reduced-motion: reduce) { .hkl-card { transition: none; } .hkl-card.done .face { animation: none; } #hk-loader.out { transform: none; filter: none; } }
+    </style>
   </head>
   <body>
+    <div id="hk-loader" role="status" aria-label="Đang tải HOA KOI">
+      <canvas id="hkl-petals"></canvas>
+      <div class="hkl-logo"><b>花恋</b><span>HOA KOI</span></div>
+      <div class="hkl-cards" id="hkl-cards"></div>
+      <div class="hkl-yaku"><span class="jp" id="hkl-jp"></span><span class="vi" id="hkl-vi"></span></div>
+      <div class="hkl-bar"><div class="hkl-track"><div class="hkl-fill" id="hkl-fill"></div></div>
+        <div class="hkl-status"><span id="hkl-msg">Đang xào bài…</span><span id="hkl-pct">0%</span></div></div>
+    </div>
+    <script src="./src/loader.js?v=2"></script>
     <canvas id="particle-canvas"></canvas>
     <div id="app"></div>
-    <script src="./src/app.bundle.js?v=71"></script>
+    <script src="./src/app.bundle.js?v=142"></script>
   </body>
 </html>

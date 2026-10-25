@@ -17,6 +17,7 @@ GROUPS = [
     ('characters/*.jpg', 82),          # chân dung 896x1200
     ('yaku_popup/*.png', 85),          # ảnh popup Yaku (alpha)
     ('diorama/month9/*.png', 85),      # tiểu cảnh tháng 9 (alpha)
+    ('diorama/month1/*.png', 85),      # tiểu cảnh tháng 1 (alpha, xuất từ art-test/tieucanh/xuat_game_thang1.py)
     ('cards/*.jpg', 85),               # 48 lá bài
     ('backs/*.jpg', 85),               # mặt sau
     ('pvp_arena_banner.jpg', 82),

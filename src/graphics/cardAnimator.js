@@ -31,6 +31,18 @@ export class CardFlightAnimator {
   }
 
   /**
+   * Dọn sạch các lá bài đang bay / ghép cặp trên lớp hiệu ứng (khi mở modal đè lên bàn)
+   */
+  clearAllFloaters() {
+    if (this.layer) {
+      this.layer.replaceChildren();
+    }
+    document.querySelectorAll('[data-field-id]').forEach((el) => {
+      if (el.style.opacity === '0') el.style.opacity = '1';
+    });
+  }
+
+  /**
    * Helper to get bounding rect or fallback center rect
    */
   getRect(elOrSelector, fallbackX = window.innerWidth / 2, fallbackY = window.innerHeight / 2) {
@@ -186,6 +198,10 @@ export class CardFlightAnimator {
     toFieldCardId,
     onLandSound
   }) {
+    if (document.body.classList.contains('hk-capv-open')) {
+      if (onLandSound) onLandSound();
+      return;
+    }
     const targetEl = document.querySelector(`[data-field-id="${toFieldCardId}"]`);
     const toRect = this.getRect(
       targetEl,
@@ -203,22 +219,27 @@ export class CardFlightAnimator {
     const scaleX = toRect.width / (fromRect.width || 76);
     const scaleY = toRect.height / (fromRect.height || 118);
 
+    const flightFrames = [
+      {
+        transform: 'translate3d(0px, 0px, 0px) scale(1) rotateZ(0deg)',
+        boxShadow: '0 12px 24px rgba(0,0,0,0.65)'
+      },
+      {
+        transform: `translate3d(${dx * 0.55}px, ${dy * 0.55 - 42}px, 0px) scale(1.16) rotateZ(-4deg)`,
+        boxShadow: '0 28px 45px rgba(0,0,0,0.85)',
+        offset: 0.55
+      },
+      {
+        transform: `translate3d(${dx}px, ${dy}px, 0px) scale(${scaleX}, ${scaleY}) rotateZ(0deg)`,
+        boxShadow: '0 4px 10px rgba(0,0,0,0.6)'
+      }
+    ];
+    // perf-low (iOS/mobile): chỉ animate transform, giữ bóng tĩnh của .fx-floating-card
+    if (document.body.classList.contains('perf-low')) {
+      flightFrames.forEach((f) => delete f.boxShadow);
+    }
     const anim = floater.animate(
-      [
-        {
-          transform: 'translate3d(0px, 0px, 0px) scale(1) rotateZ(0deg)',
-          boxShadow: '0 12px 24px rgba(0,0,0,0.65)'
-        },
-        {
-          transform: `translate3d(${dx * 0.55}px, ${dy * 0.55 - 42}px, 0px) scale(1.16) rotateZ(-4deg)`,
-          boxShadow: '0 28px 45px rgba(0,0,0,0.85)',
-          offset: 0.55
-        },
-        {
-          transform: `translate3d(${dx}px, ${dy}px, 0px) scale(${scaleX}, ${scaleY}) rotateZ(0deg)`,
-          boxShadow: '0 4px 10px rgba(0,0,0,0.6)'
-        }
-      ],
+      flightFrames,
       {
         duration: this.scaleMs(330),
         easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
@@ -253,6 +274,14 @@ export class CardFlightAnimator {
     fieldTargetRect,
     onImpactSound
   }) {
+    if (document.body.classList.contains('hk-capv-open')) {
+      const isBright =
+        playedCard?.type === 'hikari' ||
+        playedCard?.id === 33 ||
+        (matchedCards || []).some((c) => c.type === 'hikari' || c.id === 33);
+      if (onImpactSound) onImpactSound(isBright);
+      return;
+    }
     const primaryTarget = matchedCards[0];
     const targetRect =
       fieldTargetRect ||
@@ -409,6 +438,197 @@ export class CardFlightAnimator {
     this.pulseCapturedTray(actor);
     fieldFloaters.forEach((f) => f.remove());
     incomingFloater.remove();
+  }
+
+  /**
+   * Scenario 3: Bàn cờ mở trận - Chia bài tuần tự từng lá một (24 lá: Đối thủ -> Chiếu -> Tay mình x 8 vòng)
+   * Bay đúng tâm, đúng scale và đúng độ nghiêng 2.5D ở từng góc bàn cờ (perspective, board-tilt).
+   * Co giãn theo nút tốc độ qua scaleMs (~2s ở 1x).
+   */
+  async animateRoundDeal({
+    deckSelector = '#draw-pile-stack',
+    aiElements = [],
+    fieldElements = [],
+    playerElements = [],
+    fieldCards = [],
+    playerCards = [],
+    skinId = 'standard',
+    equippedBack = 'back-standard',
+    aiBackId = null,
+    onDealSound = null,
+    isCancelled = null
+  } = {}) {
+    const deckRect = this.getRect(deckSelector);
+    if (!deckRect || deckRect.width === 0) return;
+
+    const startCenterX = deckRect.left + deckRect.width * 0.5;
+    const startCenterY = deckRect.top + deckRect.height * 0.5;
+
+    // Lấy góc tilt 2.5D hiện tại của bàn và tâm bàn cờ để tính góc nghiêng phối cảnh
+    const tiltStr = getComputedStyle(document.documentElement).getPropertyValue('--board-tilt').trim() || '21deg';
+    const isPerfLow = document.body.classList.contains('perf-low');
+    const boardTiltDeg = isPerfLow ? 0 : parseFloat(tiltStr) || 21;
+
+    const boardEl = document.querySelector('.tabletop-25d-board');
+    const boardRect = boardEl ? boardEl.getBoundingClientRect() : null;
+    const boardCenterX = boardRect ? boardRect.left + boardRect.width * 0.5 : window.innerWidth * 0.5;
+
+    const allTargets = [...aiElements, ...fieldElements, ...playerElements];
+    allTargets.forEach((el) => {
+      if (el) el.classList.add('card-deal-hidden');
+    });
+
+    const activeFloaters = new Set();
+    const flightPromises = [];
+
+    // Chia tuần tự từng lá một: 8 vòng x 3 nơi = 24 lá
+    const roundsCount = 8;
+    const stepInterval = this.scaleMs(102);
+    const flightDuration = this.scaleMs(345);
+
+    let stepIndex = 0;
+
+    for (let r = 0; r < roundsCount; r++) {
+      if (isCancelled && isCancelled()) break;
+
+      // Mỗi vòng chia tuần tự từng lá: 1. Đối thủ, 2. Chiếu, 3. Tay mình
+      const sequence = [
+        {
+          actor: 'ai',
+          targetEl: aiElements[r],
+          cardObj: null,
+          backId: aiBackId || equippedBack
+        },
+        {
+          actor: 'field',
+          targetEl: fieldElements[r],
+          cardObj: fieldCards[r],
+          backId: null
+        },
+        {
+          actor: 'player',
+          targetEl: playerElements[r],
+          cardObj: playerCards[r],
+          backId: null
+        }
+      ];
+
+      for (const item of sequence) {
+        if (isCancelled && isCancelled()) break;
+
+        const targetEl = item.targetEl;
+        if (!targetEl) continue;
+
+        if (onDealSound) {
+          onDealSound(stepIndex, item.actor);
+        }
+
+        const toRect = this.getRect(targetEl);
+        const targetCenterX = toRect.left + toRect.width * 0.5;
+        const targetCenterY = toRect.top + toRect.height * 0.5;
+
+        // Vector di chuyển tâm bài chính xác tuyệt đối
+        const dx = targetCenterX - startCenterX;
+        const dy = targetCenterY - startCenterY;
+        const scaleX = toRect.width / (deckRect.width || 76);
+        const scaleY = toRect.height / (deckRect.height || 118);
+
+        // Độ lệch tâm theo trục X của slot đích (-1 đến +1)
+        const relX = boardRect && boardRect.width > 0 ? (targetCenterX - boardCenterX) / (boardRect.width * 0.5) : 0;
+        const clampedRelX = Math.max(-1.1, Math.min(1.1, relX));
+
+        let targetTiltX = 0;
+        let targetTiltY = 0;
+        let targetTiltZ = 0;
+
+        if (item.actor === 'player') {
+          // Tay người chơi: dock phẳng ở dưới, không nghiêng bàn
+          targetTiltX = 0;
+          targetTiltY = 0;
+          targetTiltZ = clampedRelX * 2.2;
+        } else if (item.actor === 'field') {
+          // Chiếu: nằm trên mặt bàn nghiêng 2.5D, góc xoay phối cảnh theo góc bàn trái/phải
+          targetTiltX = boardTiltDeg;
+          targetTiltY = isPerfLow ? 0 : -clampedRelX * (boardTiltDeg / 21) * 3.2;
+          targetTiltZ = isPerfLow ? 0 : clampedRelX * (boardTiltDeg / 21) * 1.5;
+        } else {
+          // Tay đối thủ: đỉnh xa nhất trên bàn cờ
+          targetTiltX = boardTiltDeg;
+          targetTiltY = isPerfLow ? 0 : -clampedRelX * (boardTiltDeg / 21) * 2.6;
+          targetTiltZ = isPerfLow ? 0 : clampedRelX * (boardTiltDeg / 21) * 1.2;
+        }
+
+        // Tạo floating card tại đúng tâm cọc bài
+        const floater = this.createFloatingCard(
+          item.cardObj,
+          skinId,
+          deckRect,
+          item.backId
+        );
+        floater.style.left = `${startCenterX - deckRect.width * 0.5}px`;
+        floater.style.top = `${startCenterY - deckRect.height * 0.5}px`;
+        floater.style.width = `${deckRect.width}px`;
+        floater.style.height = `${deckRect.height}px`;
+        floater.style.transformOrigin = 'center center';
+        activeFloaters.add(floater);
+
+        const midDx = dx * 0.5;
+        const archHeight = item.actor === 'ai' ? 18 : item.actor === 'player' ? 34 : 24;
+        const midDy = dy * 0.5 - archHeight;
+        const midTiltX = (boardTiltDeg + targetTiltX) * 0.5 + 4;
+        const midTiltZ = (dx > 0 ? 5 : -5) + targetTiltZ * 0.5;
+        const midScale = ((1 + Math.max(scaleX, scaleY)) * 0.5) * 1.08;
+
+        const p = new Promise((resolve) => {
+          const anim = floater.animate(
+            [
+              {
+                transform: `translate3d(0px, 0px, 0px) perspective(1200px) rotateX(${boardTiltDeg}deg) rotateY(0deg) rotateZ(0deg) scale(1)`,
+                opacity: 0.95
+              },
+              {
+                transform: `translate3d(${midDx}px, ${midDy}px, 30px) perspective(1200px) rotateX(${midTiltX}deg) rotateY(${-clampedRelX * 5}deg) rotateZ(${midTiltZ}deg) scale(${midScale})`,
+                opacity: 1,
+                offset: 0.5
+              },
+              {
+                transform: `translate3d(${dx}px, ${dy}px, 0px) perspective(1200px) rotateX(${targetTiltX}deg) rotateY(${targetTiltY}deg) rotateZ(${targetTiltZ}deg) scale(${scaleX}, ${scaleY})`,
+                opacity: 1
+              }
+            ],
+            {
+              duration: flightDuration,
+              easing: 'cubic-bezier(0.18, 0.95, 0.32, 1)',
+              fill: 'forwards'
+            }
+          );
+
+          anim.finished
+            .catch(() => {})
+            .finally(() => {
+              targetEl.classList.remove('card-deal-hidden');
+              activeFloaters.delete(floater);
+              floater.remove();
+              resolve();
+            });
+        });
+
+        flightPromises.push(p);
+        stepIndex++;
+        await new Promise((r) => setTimeout(r, stepInterval));
+      }
+    }
+
+    await Promise.all(flightPromises);
+    if (!isCancelled || !isCancelled()) {
+      await new Promise((r) => setTimeout(r, this.scaleMs(210)));
+    }
+
+    allTargets.forEach((el) => {
+      if (el) el.classList.remove('card-deal-hidden');
+    });
+    activeFloaters.forEach((f) => f.remove());
+    activeFloaters.clear();
   }
 }
 

@@ -14,21 +14,28 @@ import {
 import {
   renderCardFaceSVG,
   renderCardBackSVG,
+  prewarmCardFaces,
+  prewarmCardBack,
   renderTabletopFlowerDioramaSVG,
   renderTabletopBillboardDioramaHTML,
-  getTabletopDioramaInfo
-} from './graphics/cardArtwork.js?v=25';
-import { ParticleSystem25D } from './graphics/particles25d.js?v=25';
+  AVAILABLE_DIORAMA_MONTHS
+} from './graphics/cardArtwork.js?v=26';
+import { createHacRig } from './graphics/hacRig.js?v=1';
+import { ParticleSystem25D } from './graphics/particles25d.js?v=27';
 import { playYakuReveal, warmYakuRevealAssets } from './graphics/yakuReveal.js?v=25';
 import { cardAnimator } from './graphics/cardAnimator.js?v=25';
 import { soundEngine, BGM_TRACKS } from './audio/soundEngine.js?v=25';
-import { KoiKoiEngine } from './engine/koiKoiEngine.js?v=25';
+import { KoiKoiEngine, compareDealerCards } from './engine/koiKoiEngine.js?v=25';
 import { multiplayerService } from './services/multiplayerService.js?v=25';
-import { initViewportScaler } from './ui/viewportScaler.js?v=25';
+import { initViewportScaler, isPerfLow, getPerfModePref, setPerfMode } from './ui/viewportScaler.js?v=26';
 
 const STORAGE_KEY = 'hanakoi_25d_save_v1';
 const THEME_STORAGE_KEY = 'hanakoi_theme_mode';
 const ANIM_SPEED_STORAGE_KEY = 'hanakoi_anim_speed';
+
+function prefersSystemDark() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
 
 function setElementMarkup(el, markup) {
   if (!el) return;
@@ -39,6 +46,62 @@ function setElementMarkup(el, markup) {
   const doc = new DOMParser().parseFromString(String(markup), 'text/html');
   doc.querySelectorAll('script, iframe, object, embed').forEach((n) => n.remove());
   el.replaceChildren(...Array.from(doc.body.childNodes));
+}
+
+// Như setElementMarkup nhưng bỏ qua khi markup giống lần trước và DOM chưa bị thay (không parse/vẽ lại).
+function setElementMarkupIfChanged(el, markup) {
+  if (!el) return false;
+  const str = String(markup || '');
+  if (el._hkMarkup === str && el._hkFirst === el.firstChild && el._hkLast === el.lastChild) return false;
+  setElementMarkup(el, str);
+  el._hkMarkup = str;
+  el._hkFirst = el.firstChild;
+  el._hkLast = el.lastChild;
+  return true;
+}
+
+function parseSingleElement(markup) {
+  const doc = new DOMParser().parseFromString(String(markup), 'text/html');
+  doc.querySelectorAll('script, iframe, object, embed').forEach((n) => n.remove());
+  return doc.body.firstElementChild;
+}
+
+// Cập nhật danh sách con theo key: con nào markup không đổi thì giữ nguyên node (không restart
+// animation, không vẽ lại), chỉ tạo/thay/bỏ phần khác. items: [{ key, markup }]. Trả về các node mới tạo.
+function patchKeyedChildren(parent, items) {
+  const created = [];
+  if (!parent) return created;
+  const existing = new Map();
+  for (const el of Array.from(parent.children)) {
+    if (el._hkKey === undefined || existing.has(el._hkKey)) el.remove();
+    else existing.set(el._hkKey, el);
+  }
+  const wanted = new Set(items.map((it) => it.key));
+  existing.forEach((el, key) => {
+    if (!wanted.has(key)) el.remove();
+  });
+  const make = (key, markup) => {
+    const el = parseSingleElement(markup);
+    el._hkKey = key;
+    el._hkMarkup = markup;
+    created.push(el);
+    return el;
+  };
+  let cursor = parent.firstElementChild;
+  for (const { key, markup } of items) {
+    let el = wanted.has(key) ? existing.get(key) : null;
+    if (el && el._hkMarkup !== markup) {
+      const fresh = make(key, markup);
+      if (cursor === el) cursor = fresh;
+      el.replaceWith(fresh);
+      el = fresh;
+    } else if (!el) {
+      el = make(key, markup);
+    }
+    if (el !== cursor) parent.insertBefore(el, cursor);
+    cursor = el.nextElementSibling;
+  }
+  return created;
 }
 
 // Replace a single element (in place) with the first element parsed from markup.
@@ -61,28 +124,43 @@ class HanaKoiApp {
 
   set currentDialogue(value) {
     this._currentDialogue = String(value || '').replace(/\s*「[^」]*」/g, '').trim();
-    this.dialogueHideAt = Date.now() + 4500;
+    const isCompact =
+      typeof document !== 'undefined' && document.body.classList.contains('layout-compact');
+    const holdMs = isCompact ? 2000 : 4500;
+    this.dialogueHideAt = Date.now() + holdMs;
     if (this._dialogueTimer) clearTimeout(this._dialogueTimer);
+    if (typeof this.syncCompactHeaderState === 'function') this.syncCompactHeaderState();
     this._dialogueTimer = setTimeout(() => {
       if (typeof this.renderLeftPanel === 'function') this.renderLeftPanel();
-    }, 4600);
+      if (typeof this.syncCompactHeaderState === 'function') this.syncCompactHeaderState();
+    }, holdMs + 60);
   }
 
   constructor() {
     this.saveData = this.loadSaveData();
-    this.darkMode = localStorage.getItem(THEME_STORAGE_KEY) === 'dark';
+    // Chưa chọn theme trong menu ⚙ → theo dark mode của máy (và đổi theo khi máy đổi)
+    // localStorage có thể ném lỗi (Safari chặn dữ liệu trang / iframe) → không để game trắng màn
+    let savedTheme = null;
+    let savedSpeed = NaN;
+    try {
+      savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+      savedSpeed = Number(localStorage.getItem(ANIM_SPEED_STORAGE_KEY));
+    } catch {
+      // Ignore
+    }
+    this.darkMode = savedTheme ? savedTheme === 'dark' : prefersSystemDark();
     this.animSpeedOptions = [0.2, 0.5, 0.75, 1, 2, 5];
-    const savedSpeed = Number(localStorage.getItem(ANIM_SPEED_STORAGE_KEY));
     this.animSpeed = this.animSpeedOptions.includes(savedSpeed) ? savedSpeed : 1;
     cardAnimator.setSpeedMultiplier(this.animSpeed);
     this.settingsMenuOpen = false;
     this.applyThemeMode();
+    this.watchSystemTheme();
 
     this.engine = new KoiKoiEngine();
     this.gameMode = 'pve'; // 'pve' | 'pvp' | 'custom'
     this.currentOpponent = getOpponentById(this.saveData.selectedOpponentId || 'koharu');
     this.currentDialogue = this.pickRandom(this.currentOpponent.dialogues.intro);
-    this.tableFlowerMonth = 9;
+    this.tableFlowerMonth = this.pickTableFlowerMonth();
 
     this.hoveredHandCardMonth = null;
     this.isAnimating = false;
@@ -113,8 +191,17 @@ class HanaKoiApp {
 
     this.initDOM();
     this.particles = new ParticleSystem25D(document.getElementById('particle-canvas'));
-    this.particles.setMonthTheme(9);
+    this.particles.setMonthTheme(this.tableFlowerMonth || 9);
     this.particles.start();
+
+    // Modal toàn màn hình che canvas hạt → dừng hạt nền (burst vẫn chạy)
+    const modalRoot = document.getElementById('modal-root');
+    if (modalRoot) {
+      const syncParticleOcclusion = () =>
+        this.particles.setOccluded(!!modalRoot.querySelector('.modal-backdrop, .hk-capv-backdrop'));
+      new MutationObserver(syncParticleOcclusion).observe(modalRoot, { childList: true });
+      syncParticleOcclusion();
+    }
 
     document.addEventListener(
       'pointerdown',
@@ -152,14 +239,59 @@ class HanaKoiApp {
     this.maybeShowFirstTutorial();
   }
 
-  /**
-   * Temporarily locked to Month 9 (Kiku - Chrysanthemum & Sake Cup) while previewing Month 9 watercolor elements
-   */
+  /** Cài đặt tiểu cảnh: 'random' (mặc định, mỗi trận ngẫu nhiên) | '1' | '9' (cố định 1 tháng) | 'off' (tắt) */
+  getDioramaPref() {
+    const p = String(this.saveData.dioramaPref || 'random');
+    return p === 'off' || AVAILABLE_DIORAMA_MONTHS.includes(Number(p)) ? p : 'random';
+  }
+
+  /** Tháng tiểu cảnh cho trận mới theo cài đặt; 0 = tắt tiểu cảnh */
+  pickTableFlowerMonth() {
+    const p = this.getDioramaPref();
+    if (p === 'off') return 0;
+    if (p !== 'random') return Number(p);
+    return AVAILABLE_DIORAMA_MONTHS[Math.floor(Math.random() * AVAILABLE_DIORAMA_MONTHS.length)];
+  }
+
   rollNewTableFlowerMonth() {
-    this.tableFlowerMonth = 9;
+    this.tableFlowerMonth = this.pickTableFlowerMonth();
     if (this.particles) {
-      this.particles.setMonthTheme(9);
+      this.particles.setMonthTheme(this.tableFlowerMonth || 9);
     }
+  }
+
+  /** Nhãn cài đặt tiểu cảnh trong menu ⚙ */
+  dioramaPrefLabel() {
+    const p = this.getDioramaPref();
+    if (p === 'off') return 'Đang tắt';
+    if (p !== 'random') return `Tháng ${p}`;
+    return this.tableFlowerMonth ? `Ngẫu nhiên · Tháng ${this.tableFlowerMonth}` : 'Ngẫu nhiên';
+  }
+
+  /** Hạc tháng 1: rig 5 mảnh chạy bằng requestAnimationFrame, gắn vào anchor trên mặt bàn */
+  mountDioramaActors(stage) {
+    if (this.dioramaRaf) cancelAnimationFrame(this.dioramaRaf);
+    this.dioramaRaf = 0;
+    const rigs = [...stage.querySelectorAll('.m1-hac-anchor')].map((an) =>
+      createHacRig(an, {
+        base: './public/assets/diorama/month1/hac_',
+        ext: '.webp?v=1',
+        scale: Number(an.dataset.scale) || 0.21,
+        pos: [0, 0],
+        flip: an.dataset.flip === '1'
+      })
+    );
+    if (!rigs.length) return;
+    let last = performance.now();
+    const loop = (now) => {
+      if (!rigs[0].el.isConnected) { this.dioramaRaf = 0; return; }
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (!document.hidden) rigs.forEach((r) => r.tick(dt));
+      this.dioramaRaf = requestAnimationFrame(loop);
+    };
+    rigs.forEach((r) => r.tick(0));
+    this.dioramaRaf = requestAnimationFrame(loop);
   }
 
   setAnimSpeed(mult) {
@@ -181,6 +313,25 @@ class HanaKoiApp {
     document.documentElement.setAttribute('data-theme', this.darkMode ? 'dark' : 'light');
   }
 
+  watchSystemTheme() {
+    const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+    if (!mq) return;
+    const onChange = () => {
+      let saved = null;
+      try {
+        saved = localStorage.getItem(THEME_STORAGE_KEY);
+      } catch {
+        // Ignore
+      }
+      if (saved || this.darkMode === mq.matches) return;
+      this.darkMode = mq.matches;
+      this.applyThemeMode();
+      this.renderAll();
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange); // Safari/iOS < 14
+  }
+
   toggleDarkMode() {
     this.darkMode = !this.darkMode;
     try {
@@ -191,6 +342,21 @@ class HanaKoiApp {
     this.applyThemeMode();
     soundEngine.playCardHover();
     this.renderAll();
+  }
+
+  // PvP: khách không tự chia bài; bấm Ván tiếp/Tái đấu chỉ chuyển sang chờ chủ phòng
+  waitForHostDeal() {
+    if (!this.isMultiplayerMatch() || multiplayerService.role === 'host') return false;
+    if (!this.mpWaitingHost) {
+      this.mpWaitingHost = true;
+      this.currentDialogue = 'Đang chờ chủ phòng chia bài…';
+      this.renderAll();
+    }
+    return true;
+  }
+
+  isGuestWaitingHost() {
+    return !!this.mpWaitingHost && this.isMultiplayerMatch() && multiplayerService.role !== 'host';
   }
 
   isMultiplayerMatch() {
@@ -219,12 +385,14 @@ class HanaKoiApp {
     }) => {
       this.gameMode = mode || 'custom';
       this.activeModal = null;
+      this.mpWaitingHost = false;
       this.customRoomError = '';
       this.rollNewTableFlowerMonth();
       soundEngine.playShobuVictory();
+      this.bumpMatchToken();
 
       if (role === 'host') {
-        if (!initialGameState || guestJustJoined) {
+        if (!initialGameState) {
           this.engine.startNewMatch(this.saveData.matchRounds || 3);
           const canonical = this.engine.exportCanonicalState('host', null);
           multiplayerService.syncRoomState(canonical, { type: 'MATCH_START' });
@@ -240,16 +408,51 @@ class HanaKoiApp {
         opponentName || 'KỲ THỦ ONLINE',
         this.currentOpponent.avatar,
         mode === 'pvp' ? 'GHÉP TRẬN THÀNH CÔNG!' : `PHÒNG #${roomCode} BẮT ĐẦU!`,
-        `Bạn là ${role === 'host' ? 'Chủ Phòng (Đi Trước)' : 'Khách Thách Đấu'} — Chúc may mắn!`
+        `Bạn là ${role === 'host' ? 'Chủ Phòng' : 'Khách Thách Đấu'} — Bốc bài chọn người đi trước!`
       );
       this.renderAll();
+      this.runRoundOpeningSequence();
     };
 
-    multiplayerService.onStateReceived = async (canonicalState, lastAction) => {
+    // Hàng đợi state PvP: service gọi không await (polling + BroadcastChannel) nên xếp chuỗi promise để xử lý tuần tự đúng thứ tự version
+    multiplayerService.onStateReceived = (canonicalState, lastAction, version) => {
+      const roomCode = multiplayerService.roomCode;
+      this._mpStateQueue = (this._mpStateQueue || Promise.resolve())
+        .then(() => {
+          if (roomCode !== multiplayerService.roomCode) return;
+          if (version && this._mpQueuedRoom === roomCode && version <= (this._mpLastAppliedVersion || 0)) return;
+          if (version) {
+            this._mpQueuedRoom = roomCode;
+            this._mpLastAppliedVersion = version;
+          }
+          return this.applyRemoteState(canonicalState, lastAction);
+        })
+        .catch((err) => {
+          console.error('[PvP] Lỗi xử lý state:', err);
+          this.isAnimating = false;
+        });
+      return this._mpStateQueue;
+    };
+
+    this.applyRemoteState = async (canonicalState, lastAction) => {
       if (!this.isMultiplayerMatch()) return;
 
-      // Animate remote opponent's played and drawn cards if provided
-      if (lastAction && lastAction.type === 'TURN_MOVE' && !this.isAnimating) {
+      // Chờ hiệu ứng cục bộ đang chạy (tối đa 4s) để không bỏ hiệu ứng nước đi của đối thủ
+      if (lastAction && lastAction.type === 'TURN_MOVE') {
+        const waitStart = Date.now();
+        while (this.isAnimating && Date.now() - waitStart < 4000) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (!this.isMultiplayerMatch()) return;
+      }
+
+      // Animate remote opponent's played and drawn cards if provided (skip visual flight while viewing captured panel)
+      if (
+        lastAction &&
+        lastAction.type === 'TURN_MOVE' &&
+        !this.isAnimating &&
+        this.activeModal !== 'captured_view'
+      ) {
         await this.animateRemoteOpponentAction(lastAction);
       } else if (lastAction && lastAction.type === 'CALL_KOIKOI') {
         this.triggerAnimeCutin(
@@ -257,8 +460,20 @@ class HanaKoiApp {
           this.currentOpponent.avatar,
           'KOI-KOI! (こいこい)',
           `${this.getOpponentDisplayName()} tuyên bố cược tiếp để nhân đôi điểm!`,
-          this.currentOpponent.portrait
+          this.currentOpponent.koikoiArt || this.currentOpponent.portrait,
+          this.currentOpponent.koikoiScale,
+          this.currentOpponent.koikoiDrop
         );
+      }
+
+      // Khách PvP nhận ván/trận mới từ chủ phòng: tính là ván mới
+      if (
+        lastAction &&
+        (lastAction.type === 'NEXT_ROUND' ||
+          lastAction.type === 'REMATCH' ||
+          lastAction.type === 'MATCH_START')
+      ) {
+        this.bumpMatchToken();
       }
 
       const prevPhase = this.engine.phase;
@@ -277,6 +492,20 @@ class HanaKoiApp {
 
       if (this.activeModal === 'round_end' && this.engine.phase !== 'ROUND_OVER') {
         this.activeModal = null;
+      }
+      if (this.engine.phase !== 'ROUND_OVER' && this.engine.phase !== 'MATCH_OVER') {
+        this.mpWaitingHost = false;
+      }
+
+      if (
+        lastAction &&
+        (lastAction.type === 'NEXT_ROUND' ||
+          lastAction.type === 'REMATCH' ||
+          lastAction.type === 'MATCH_START')
+      ) {
+        this.renderAll();
+        this.runRoundOpeningSequence();
+        return;
       }
 
       if (prevPhase === 'AI_TURN' && this.engine.phase === 'PLAYER_HAND') {
@@ -301,12 +530,14 @@ class HanaKoiApp {
 
   async animateRemoteOpponentAction(action) {
     try {
+      if (this.activeModal === 'captured_view') return;
       this.isAnimating = true;
       const skinId = this.saveData.equippedSkin;
       const aiHandRect = cardAnimator.getRect('.ai-hand-zone .hana-card-3d:last-child');
       const fieldRects = this.snapshotFieldRects();
 
-      if (action.handCard) {
+      if (action.handCard && this.activeModal !== 'captured_view') {
+        soundEngine.playCardDeal(0.36);
         if (action.capturedHand && action.capturedHand.length > 0) {
           const matchedCards = action.capturedHand.slice(1);
           const targetRect = fieldRects[matchedCards[0]?.id];
@@ -324,7 +555,8 @@ class HanaKoiApp {
         }
       }
 
-      if (action.drawnCard) {
+      if (action.drawnCard && this.activeModal !== 'captured_view') {
+        soundEngine.playCardFlip();
         const deckRect = cardAnimator.getRect('#draw-pile-stack');
         if (action.capturedDraw && action.capturedDraw.length > 0) {
           const matchedDraw = action.capturedDraw.slice(1);
@@ -373,24 +605,29 @@ class HanaKoiApp {
   }
 
   bindAutoStartAudio() {
+    const unlockEvents = ['touchstart', 'touchend', 'pointerdown', 'keydown'];
     const unlockAndPlay = () => {
+      this._userHasInteracted = true;
+      soundEngine.unlockAudio();
+      if (this._monthIntroShowing && !this._monthIntroSfxPlayed) {
+        this._monthIntroSfxPlayed = true;
+        soundEngine.playMonthIntro();
+      }
       if (soundEngine.bgmEnabled) {
         soundEngine.startBgm();
         this.renderTopNav();
       }
       if (soundEngine.ctx && soundEngine.ctx.state === 'running') {
-        window.removeEventListener('pointerdown', unlockAndPlay);
-        window.removeEventListener('keydown', unlockAndPlay);
+        unlockEvents.forEach((evt) => window.removeEventListener(evt, unlockAndPlay));
       }
     };
-    window.addEventListener('pointerdown', unlockAndPlay, { passive: true });
-    window.addEventListener('keydown', unlockAndPlay, { passive: true });
+    unlockEvents.forEach((evt) => window.addEventListener(evt, unlockAndPlay, { passive: true }));
     setTimeout(() => {
       try {
         soundEngine.startBgm();
         this.renderTopNav();
       } catch {
-        // Will unlock on first pointerdown
+        // Will unlock on first touch/pointerdown
       }
     }, 150);
   }
@@ -464,7 +701,112 @@ class HanaKoiApp {
       <!-- Modal & Cut-in Containers -->
       <div id="modal-root"></div>
       <div id="cutin-root"></div>
+      <div id="month-intro-root"></div>
     `);
+
+    this.bindLongPressCardInspect(app);
+    this.bindGlobalButtonClickSound(app);
+    window.addEventListener('hk-compactchange', () => {
+      if (this.engine) this.renderAll();
+    });
+  }
+
+  bindGlobalButtonClickSound(app) {
+    if (!app || this._buttonClickSoundBound) return;
+    this._buttonClickSoundBound = true;
+    app.addEventListener(
+      'click',
+      (e) => {
+        const btn = e.target.closest('button, .live-room-pill, .hk-cap-compact-block');
+        if (!btn || btn.disabled) return;
+        // Các nút đã có hiệu ứng âm thanh đặc trưng riêng thì không phát đè tiếng click thường
+        if (
+          btn.hasAttribute('data-sfx-test') ||
+          btn.id === 'btn-toggle-sound' ||
+          btn.id === 'btn-cycle-bgm' ||
+          btn.id === 'btn-flip-inspector' ||
+          btn.id === 'btn-choose-koikoi' ||
+          btn.id === 'btn-choose-shobu' ||
+          btn.id === 'btn-next-round' ||
+          btn.id === 'btn-play-again' ||
+          btn.id === 'btn-restart-match' ||
+          btn.id === 'btn-unlock-all-demo'
+        ) {
+          return;
+        }
+        soundEngine.playButtonClick();
+      },
+      true
+    );
+  }
+
+  bindLongPressCardInspect(app) {
+    if (!app || this._longPressBound) return;
+    this._longPressBound = true;
+    let timer = null;
+    let sx = 0;
+    let sy = 0;
+
+    const clear = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    app.addEventListener(
+      'pointerdown',
+      (e) => {
+        clear();
+        const cardEl = e.target.closest(
+          '[data-hand-id], [data-field-id], [data-drawn-card-id], [data-inspect-id]'
+        );
+        if (!cardEl || this.activeModal === 'card_inspect') return;
+        const rawId =
+          cardEl.getAttribute('data-hand-id') ||
+          cardEl.getAttribute('data-field-id') ||
+          cardEl.getAttribute('data-drawn-card-id') ||
+          cardEl.getAttribute('data-inspect-id');
+        const cardId = Number(rawId);
+        if (!cardId) return;
+        sx = e.clientX;
+        sy = e.clientY;
+        timer = setTimeout(() => {
+          timer = null;
+          this._suppressNextClick = true;
+          setTimeout(() => {
+            this._suppressNextClick = false;
+          }, 450);
+          this.openQuickCardInspector(cardId);
+        }, 420);
+      },
+      { passive: true }
+    );
+
+    app.addEventListener(
+      'pointermove',
+      (e) => {
+        if (!timer) return;
+        if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) {
+          clear();
+        }
+      },
+      { passive: true }
+    );
+
+    ['pointerup', 'pointercancel', 'contextmenu'].forEach((evt) =>
+      app.addEventListener(evt, clear, { passive: true })
+    );
+  }
+
+  openQuickCardInspector(cardId) {
+    const c = getCardById(Number(cardId));
+    if (!c) return;
+    this.inspectedCardId = c.id;
+    this.inspectorFlipped = false;
+    soundEngine.playCardFlip();
+    this.activeModal = 'card_inspect';
+    this.renderActiveModal();
   }
 
   startMatchWithOpponent(opponentId, rounds = 3) {
@@ -478,7 +820,8 @@ class HanaKoiApp {
     this.rollNewTableFlowerMonth();
     this.currentDialogue = this.pickRandom(this.currentOpponent.dialogues.intro);
     this.activeModal = null;
-    this.isAnimating = false;
+    this.isAnimating = true;
+    this.selectedHandCardId = null;
     this.activeTeasePopup = null;
     this.lastTeaseLineIndex = -1;
     if (this.teaseTimer) {
@@ -487,12 +830,439 @@ class HanaKoiApp {
     }
     this.newlyUnlockedItems = [];
 
+    this.bumpMatchToken();
     this.engine.startNewMatch(rounds);
     this.renderAll();
+    this.runRoundOpeningSequence();
+  }
 
-    if (this.engine.phase === 'AI_TURN') {
-      this.scheduleAiTurn();
+  /**
+   * Trình tự mở hiệp đấu:
+   * - Bước 1: Bốc bài chọn người đi trước (Chỉ ở Ván 1 của trận; từ Ván 2 giữ luật người thắng ván trước đi trước)
+   * - Bước 3: Hiện chữ Kanji tháng thư pháp Yuji Boku (一月, 二月...) giữa màn hình ~1,2s
+   * - Bước 2: Chia 24 lá bài tuần tự từng lá một từ cọc bài #draw-pile-stack ~2s
+   */
+  async runRoundOpeningSequence() {
+    const seqId = (this._openingSeqId = (this._openingSeqId || 0) + 1);
+    const introRoot = document.getElementById('month-intro-root');
+    if (introRoot) introRoot.replaceChildren();
+    this._monthIntroShowing = false;
+    this.isAnimating = true;
+
+    // Chờ 1 microtask để maybeShowFirstTutorial() (nếu mở game lần đầu) kịp bật modal hướng dẫn
+    await Promise.resolve();
+    if (this._openingSeqId !== seqId) return;
+    if (this.activeModal === 'tutorial') {
+      this._pendingRoundOpening = true;
+      this.isAnimating = false;
+      return;
     }
+    this._pendingRoundOpening = false;
+
+    // Ẩn các lá bài khởi đầu để bàn cờ sạch sẽ trong khi hiện bốc bài và banner tháng
+    this.hideInitialRoundCards();
+
+    try {
+      // 1. Bước 1 (Chỉ áp dụng ở Ván 1 của trận): Bốc bài chọn người đi trước (親決め - Oya Kime)
+      if (this.engine.currentRound === 1) {
+        await this.playDealerSelectionStep(seqId);
+        if (this._openingSeqId !== seqId) return;
+      }
+
+      // 2. Bước 3: Hiện Banner Tháng (Kanji thư pháp Yuji Boku) ~1.2s
+      await this.playMonthIntroBanner(this.engine.currentRound, seqId);
+      if (this._openingSeqId !== seqId) return;
+
+      // 3. Bước 2: Chia bài: Lá bay từ bộ bài (#draw-pile-stack), mỗi lượt 2 lá (tay đối thủ, chiếu, tay mình - 4 vòng) ~2s
+      await this.playRoundDealAnimation(seqId);
+    } finally {
+      this.revealAllRoundCards();
+      if (this._openingSeqId === seqId) {
+        this.isAnimating = false;
+        if (!this.isMultiplayerMatch() && this.engine.phase === 'AI_TURN') {
+          this.scheduleAiTurn();
+        }
+      }
+    }
+  }
+
+  hideInitialRoundCards() {
+    const cards = document.querySelectorAll(
+      '.ai-hand-zone .hana-card-3d, .ai-hand-zone .ai-small-card, #field-cards-grid .field-card-slot.occupied .hana-card-3d, #player-hand-cards .hana-card-3d'
+    );
+    cards.forEach((el) => el.classList.add('card-deal-hidden'));
+  }
+
+  revealAllRoundCards() {
+    const cards = document.querySelectorAll('.card-deal-hidden');
+    cards.forEach((el) => el.classList.remove('card-deal-hidden'));
+  }
+
+  async playRoundDealAnimation(seqId) {
+    if (this._openingSeqId !== seqId) return;
+
+    const aiElements = Array.from(
+      document.querySelectorAll('.ai-hand-zone .hana-card-3d, .ai-hand-zone .ai-small-card')
+    );
+    const fieldElements = Array.from(
+      document.querySelectorAll('#field-cards-grid .field-card-slot.occupied .hana-card-3d')
+    );
+    const playerElements = Array.from(
+      document.querySelectorAll('#player-hand-cards .hana-card-3d')
+    );
+
+    if (playerElements.length === 0) {
+      this.revealAllRoundCards();
+      return;
+    }
+
+    const fieldCards = fieldElements.map((el) => {
+      const cardId = Number(el.getAttribute('data-field-id'));
+      return (
+        this.engine.field.find((c) => c.id === cardId) ||
+        getCardById(cardId) ||
+        null
+      );
+    });
+
+    const playerCards = playerElements.map((el) => {
+      const cardId = Number(el.getAttribute('data-hand-id'));
+      return (
+        this.engine.playerHand.find((c) => c.id === cardId) ||
+        getCardById(cardId) ||
+        null
+      );
+    });
+
+    const opp = this.currentOpponent;
+    const aiBackId = opp?.backId || this.saveData.equippedBack;
+
+    await cardAnimator.animateRoundDeal({
+      deckSelector: '#draw-pile-stack',
+      aiElements,
+      fieldElements,
+      playerElements,
+      fieldCards,
+      playerCards,
+      skinId: this.saveData.equippedSkin,
+      equippedBack: this.saveData.equippedBack,
+      aiBackId,
+      onDealSound: (stepIndex) => {
+        if (this._userHasInteracted || (soundEngine.ctx && soundEngine.ctx.state === 'running')) {
+          const pitch = 0.94 + (stepIndex % 3) * 0.04 + Math.random() * 0.02;
+          soundEngine.playCardDeal(0.46, pitch);
+        }
+      },
+      isCancelled: () => this._openingSeqId !== seqId
+    });
+  }
+
+  async playMonthIntroBanner(roundNum, seqId) {
+    const root = document.getElementById('month-intro-root');
+    if (!root) return;
+
+    const jpMonthKanji = [
+      '一月',
+      '二月',
+      '三月',
+      '四月',
+      '五月',
+      '六月',
+      '七月',
+      '八月',
+      '九月',
+      '十月',
+      '十一月',
+      '十二月'
+    ];
+    const roundMonth = ((Math.max(1, Number(roundNum) || 1) - 1) % 12) + 1;
+    const text = jpMonthKanji[roundMonth - 1] || '一月';
+    if (document.fonts?.load) {
+      await Promise.race([
+        document.fonts.load('108px "Yuji Boku"', text).catch(() => {}),
+        new Promise((r) => setTimeout(r, 120))
+      ]);
+    }
+    if (this._openingSeqId !== seqId) return;
+
+    this._monthIntroShowing = true;
+    this._monthIntroSfxPlayed = false;
+    if (this._userHasInteracted || (soundEngine.ctx && soundEngine.ctx.state === 'running')) {
+      this._monthIntroSfxPlayed = true;
+      soundEngine.playMonthIntro();
+    }
+
+    setElementMarkup(
+      root,
+      `<div class="month-intro-overlay" aria-live="polite">
+        <div class="month-intro-banner">
+          <span class="month-intro-text" lang="ja">${text}</span>
+        </div>
+      </div>`
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    if (this._openingSeqId === seqId) {
+      this._monthIntroShowing = false;
+      root.replaceChildren();
+    }
+  }
+
+  /**
+   * BƯỚC 1: Bốc bài chọn người đi trước (親決め - Oya Kime)
+   * - Áp dụng ở Ván 1 của trận đấu
+   * - Úp 2 lá bài ngẫu nhiên giữa chiếu bàn cờ
+   * - Người chơi chạm/chọn 1 lá -> Đối thủ lấy lá còn lại
+   * - Lật cả 2 lá bài kèm âm thanh soundEngine.playCardFlip()
+   * - So sánh: Tháng nhỏ hơn đi trước; nếu bằng tháng thì so điểm lá bài
+   * - Hiện thông báo người đi trước (Bạn hay Đối thủ)
+   * - PvP Online: Đồng bộ canonical state từ server.js
+   */
+  async playDealerSelectionStep(seqId) {
+    if (this._openingSeqId !== seqId) return;
+
+    const appRoot = document.getElementById('app') || document.body;
+    if (!appRoot) return;
+
+    // Ẩn bộ bài bốc trong suốt quá trình bốc bài chọn lượt
+    const drawPileContainer = document.querySelector('.draw-pile-container');
+    if (drawPileContainer) {
+      drawPileContainer.classList.add('card-deal-hidden');
+    }
+
+    const opp = this.currentOpponent;
+    const oppName = this.getOpponentDisplayName();
+    const equippedBack = this.saveData.equippedBack;
+    const aiBackId = opp?.backId || equippedBack;
+    const equippedSkin = this.saveData.equippedSkin;
+
+    let cardLeft = null;
+    let cardRight = null;
+    let preWinnerRole = null;
+    const isPvp = this.isMultiplayerMatch();
+
+    if (isPvp && this.engine.dealerDraw) {
+      const d = this.engine.dealerDraw;
+      cardLeft = getCardById(d.cardLeftId) || HANAFUDA_CARDS[0];
+      cardRight = getCardById(d.cardRightId) || HANAFUDA_CARDS[1];
+      preWinnerRole = d.winnerRole;
+    } else {
+      let diff = 0;
+      while (diff === 0) {
+        const idxA = Math.floor(Math.random() * HANAFUDA_CARDS.length);
+        let idxB = Math.floor(Math.random() * HANAFUDA_CARDS.length);
+        while (idxB === idxA) {
+          idxB = Math.floor(Math.random() * HANAFUDA_CARDS.length);
+        }
+        cardLeft = HANAFUDA_CARDS[idxA];
+        cardRight = HANAFUDA_CARDS[idxB];
+        diff = compareDealerCards(cardLeft, cardRight);
+      }
+      this.engine.dealerDraw = {
+        cardLeftId: cardLeft.id,
+        cardRightId: cardRight.id,
+        p1CardId: cardLeft.id,
+        p2CardId: cardRight.id,
+        p1Side: 'left',
+        p2Side: 'right',
+        winnerRole: diff < 0 ? 'p1' : 'p2',
+        winnerSide: diff < 0 ? 'left' : 'right'
+      };
+      preWinnerRole = this.engine.dealerDraw.winnerRole;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'dealer-draw-overlay';
+    overlay.id = 'dealer-draw-overlay';
+    overlay.innerHTML = `
+      <div class="dealer-draw-prompt" id="dealer-draw-prompt">
+        <span>🎴 CHẠM 1 LÁ BÀI ĐỂ CHỌN NGƯỜI ĐI TRƯỚC (親決め)</span>
+      </div>
+      <div class="dealer-cards-pair">
+        <div class="dealer-card-slot" id="dealer-slot-left" data-side="left">
+          <div class="dealer-card-3d" id="dealer-card-left">
+            ${renderCardBackSVG(equippedBack)}
+          </div>
+          <div class="dealer-role-tag" id="dealer-tag-left">Chạm để chọn</div>
+          <div class="dealer-card-info" id="dealer-info-left"></div>
+        </div>
+        <div class="dealer-card-slot" id="dealer-slot-right" data-side="right">
+          <div class="dealer-card-3d" id="dealer-card-right">
+            ${renderCardBackSVG(aiBackId)}
+          </div>
+          <div class="dealer-role-tag" id="dealer-tag-right">Chạm để chọn</div>
+          <div class="dealer-card-info" id="dealer-info-right"></div>
+        </div>
+      </div>
+    `;
+
+    appRoot.appendChild(overlay);
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      let timer = null;
+
+      const finishStep = () => {
+        if (resolved) return;
+        resolved = true;
+        if (timer) clearTimeout(timer);
+        overlay.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        overlay.style.opacity = '0';
+        overlay.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+          overlay.remove();
+          // Khôi phục lại cọc bài bốc khi vào bước chia bài
+          if (drawPileContainer) {
+            drawPileContainer.classList.remove('card-deal-hidden');
+          }
+          resolve();
+        }, 300);
+      };
+
+      const doReveal = (chosenSide = 'left') => {
+        if (resolved) return;
+        const promptEl = overlay.querySelector('#dealer-draw-prompt');
+        if (promptEl) promptEl.classList.add('is-hidden');
+
+        if (this._userHasInteracted || (soundEngine.ctx && soundEngine.ctx.state === 'running')) {
+          soundEngine.playCardFlip();
+        }
+
+        const leftSlot = overlay.querySelector('#dealer-slot-left');
+        const rightSlot = overlay.querySelector('#dealer-slot-right');
+        const cardLeftEl = overlay.querySelector('#dealer-card-left');
+        const cardRightEl = overlay.querySelector('#dealer-card-right');
+        const tagLeft = overlay.querySelector('#dealer-tag-left');
+        const tagRight = overlay.querySelector('#dealer-tag-right');
+        const infoLeft = overlay.querySelector('#dealer-info-left');
+        const infoRight = overlay.querySelector('#dealer-info-right');
+
+        if (leftSlot) leftSlot.style.pointerEvents = 'none';
+        if (rightSlot) rightSlot.style.pointerEvents = 'none';
+
+        // Lật bài thật 3D: xoay 90deg, tráo sang mặt bài chính 1 trong 48 lá, rồi xoay tiếp về 0deg
+        const flipToCardFace = (cardEl, cardData) => {
+          if (!cardEl) return;
+          if (cardEl.animate) {
+            cardEl.animate(
+              [
+                { transform: 'scale(1) rotateY(0deg)' },
+                { transform: 'scale(1.06) rotateY(90deg)' }
+              ],
+              { duration: 220, easing: 'ease-in', fill: 'forwards' }
+            ).onfinish = () => {
+              cardEl.innerHTML = renderCardFaceSVG(cardData, equippedSkin, true);
+              cardEl.animate(
+                [
+                  { transform: 'scale(1.06) rotateY(-90deg)' },
+                  { transform: 'scale(1) rotateY(0deg)' }
+                ],
+                { duration: 240, easing: 'ease-out', fill: 'forwards' }
+              );
+            };
+          } else {
+            cardEl.innerHTML = renderCardFaceSVG(cardData, equippedSkin, true);
+          }
+        };
+
+        flipToCardFace(cardLeftEl, cardLeft);
+        flipToCardFace(cardRightEl, cardRight);
+
+        let playerWins = false;
+        let playerSide = chosenSide;
+        let playerCard = playerSide === 'left' ? cardLeft : cardRight;
+        let oppCard = playerSide === 'left' ? cardRight : cardLeft;
+
+        if (isPvp) {
+          const myRole = multiplayerService.role;
+          playerSide = myRole === 'host' ? 'left' : 'right';
+          playerCard = myRole === 'host' ? cardLeft : cardRight;
+          oppCard = myRole === 'host' ? cardRight : cardLeft;
+          playerWins = preWinnerRole === myRole;
+        } else {
+          const cmp = compareDealerCards(playerCard, oppCard);
+          playerWins = cmp < 0;
+        }
+
+        const leftIsPlayer = playerSide === 'left';
+        const myTag = leftIsPlayer ? tagLeft : tagRight;
+        const oppTag = leftIsPlayer ? tagRight : tagLeft;
+
+        if (infoLeft) {
+          infoLeft.textContent = `${cardLeft.viName} (Tháng ${cardLeft.month})`;
+          infoLeft.classList.add('is-visible');
+        }
+        if (infoRight) {
+          infoRight.textContent = `${cardRight.viName} (Tháng ${cardRight.month})`;
+          infoRight.classList.add('is-visible');
+        }
+
+        const winnerCardEl = playerWins
+          ? playerSide === 'left'
+            ? cardLeftEl
+            : cardRightEl
+          : playerSide === 'left'
+          ? cardRightEl
+          : cardLeftEl;
+        const loserCardEl = playerWins
+          ? playerSide === 'left'
+            ? cardRightEl
+            : cardLeftEl
+          : playerSide === 'left'
+          ? cardLeftEl
+          : cardRightEl;
+
+        const winnerTag = playerWins ? myTag : oppTag;
+        const loserTag = playerWins ? oppTag : myTag;
+        const winnerName = playerWins ? 'BẠN' : oppName;
+        const loserName = playerWins ? oppName : 'BẠN';
+
+        setTimeout(() => {
+          if (winnerCardEl) winnerCardEl.classList.add('is-winner');
+          if (loserCardEl) loserCardEl.classList.add('is-loser');
+          if (winnerTag) {
+            winnerTag.className = 'dealer-role-tag tag-winner';
+            winnerTag.textContent = `${winnerName} ★ ĐI TRƯỚC (親)`;
+          }
+          if (loserTag) {
+            loserTag.className = 'dealer-role-tag tag-loser';
+            loserTag.textContent = `${loserName} · ĐI SAU (子)`;
+          }
+        }, 250);
+
+        const dealerRole = playerWins ? 'player' : 'ai';
+        this.engine.setDealer(dealerRole);
+
+        if (isPvp && multiplayerService.role === 'host') {
+          const canonical = this.engine.exportCanonicalState('host', null);
+          multiplayerService.syncRoomState(canonical, { type: 'DEALER_DECIDED' });
+        }
+
+        setTimeout(() => {
+          finishStep();
+        }, 2200);
+      };
+
+      const leftSlot = overlay.querySelector('#dealer-slot-left');
+      const rightSlot = overlay.querySelector('#dealer-slot-right');
+      if (leftSlot) {
+        leftSlot.onclick = (e) => {
+          e.stopPropagation();
+          doReveal('left');
+        };
+      }
+      if (rightSlot) {
+        rightSlot.onclick = (e) => {
+          e.stopPropagation();
+          doReveal('right');
+        };
+      }
+
+      // Nếu người chơi không ấn vào lá bài nào thì đợi 10s rồi mới tự động lật
+      timer = setTimeout(() => {
+        doReveal('left');
+      }, 10000);
+    });
   }
 
   triggerOpponentTeaseLine(force = false) {
@@ -539,6 +1309,190 @@ class HanaKoiApp {
     this.renderActiveModal();
   }
 
+  getCompactYakuSummary(myCards, oppCards, isOpponent = false) {
+    const evalRes = evaluateCapturedYaku(myCards);
+    const completed = evalRes.yakus || [];
+    const hints = getYakuProgressHints(myCards, oppCards);
+    const shortNames = {
+      hanamizake: 'Hanami-zake',
+      tsukimizake: 'Tsukimi-zake',
+      sanko: 'Sankō',
+      inoshikacho: 'Ino-Shika-Chō',
+      akatan: 'Akatan',
+      aotan: 'Aotan'
+    };
+    const candidates = [];
+    for (const h of hints) {
+      if (h.isPossible && !h.isCompleted && h.ownedCount >= 1) {
+        candidates.push({
+          id: h.id,
+          shortName: shortNames[h.id] || h.name,
+          viName: h.name,
+          owned: h.ownedCount,
+          need: h.needCount,
+          ratio: h.ownedCount / h.needCount,
+          missing: h.needCount - h.ownedCount,
+          pts: h.pts
+        });
+      }
+    }
+    const taneCount = myCards.filter((c) => c.type === 'tane').length;
+    const tanzakuCount = myCards.filter((c) => c.type === 'tanzaku').length;
+    const kasuCount = myCards.filter((c) => c.type === 'kasu').length;
+    if (taneCount >= 3 && taneCount < 5) {
+      candidates.push({
+        id: 'tane',
+        shortName: 'Tane',
+        viName: 'Ngũ Thú',
+        owned: taneCount,
+        need: 5,
+        ratio: taneCount / 5,
+        missing: 5 - taneCount,
+        pts: 1
+      });
+    }
+    if (tanzakuCount >= 3 && tanzakuCount < 5) {
+      candidates.push({
+        id: 'tanzaku',
+        shortName: 'Tanzaku',
+        viName: 'Ngũ Đan',
+        owned: tanzakuCount,
+        need: 5,
+        ratio: tanzakuCount / 5,
+        missing: 5 - tanzakuCount,
+        pts: 1
+      });
+    }
+    if (kasuCount >= 6 && kasuCount < 10) {
+      candidates.push({
+        id: 'kasu',
+        shortName: 'Kasu',
+        viName: 'Thập Thảo',
+        owned: kasuCount,
+        need: 10,
+        ratio: kasuCount / 10,
+        missing: 10 - kasuCount,
+        pts: 1
+      });
+    }
+
+    candidates.sort((a, b) => a.missing - b.missing || b.ratio - a.ratio || b.pts - a.pts);
+
+    let chipLabel = '';
+    let chipRatio = 0;
+    let hasAlert = false;
+    if (completed.length > 0) {
+      const topY = completed[0];
+      const sName = topY.jpName.split(' ')[0];
+      chipLabel = `${isOpponent ? '▲' : '✦'} ${sName} · Đủ bộ (${evalRes.totalBasePoints}đ)`;
+      chipRatio = 1;
+      hasAlert = true;
+    } else if (candidates.length > 0) {
+      const topC = candidates[0];
+      chipLabel = `${isOpponent ? '▲' : '✦'} ${topC.shortName} ${topC.owned}/${topC.need}`;
+      chipRatio = topC.ratio;
+      hasAlert = true;
+    } else if (myCards.length > 0) {
+      const bestCat = [
+        { name: 'Tam Quang', owned: myCards.filter((c) => c.type === 'hikari').length, need: 3 },
+        { name: 'Ngũ Thú', owned: taneCount, need: 5 },
+        { name: 'Ngũ Đan', owned: tanzakuCount, need: 5 },
+        { name: 'Thập Thảo', owned: kasuCount, need: 10 }
+      ].sort((a, b) => b.owned / b.need - a.owned / a.need)[0];
+      chipLabel = `${isOpponent ? '▲' : '✦'} ${bestCat.name} ${bestCat.owned}/${bestCat.need}`;
+      chipRatio = Math.min(1, bestCat.owned / bestCat.need);
+      hasAlert = bestCat.owned > 0;
+    } else {
+      chipLabel = isOpponent ? 'Chưa có bộ sắp thành' : '✦ Chạm xem bảng Yaku';
+      chipRatio = 0;
+    }
+
+    return {
+      completed,
+      candidates,
+      nearCount: completed.length + candidates.length,
+      chipLabel,
+      chipRatio,
+      hasAlert
+    };
+  }
+
+  getCompactHeaderData() {
+    const opp = this.currentOpponent;
+    const isPlayerTurn = this.engine.phase.startsWith('PLAYER');
+    const isMp = this.isMultiplayerMatch();
+    const oppDisplayName = this.getOpponentDisplayName();
+    const stars = (opp.difficultyLabel || '★☆☆☆☆').split(' ')[0];
+    const compactOppSub = isMp
+      ? `🟢 Phòng #${multiplayerService.roomCode}`
+      : `Đối thủ · ${stars}`;
+    const showDialogue = !!this.currentDialogue && Date.now() < this.dialogueHideAt;
+    const roundMonth = ((this.engine.currentRound - 1) % 12) + 1;
+    const jpMonths = ['睦月', '如月', '弥生', '卯月', '皐月', '水無月', '文月', '葉月', '長月', '神無月', '霜月', '師走'];
+    const jpMonth = jpMonths[roundMonth - 1] || '睦月';
+    const pYaku = this.getCompactYakuSummary(this.engine.playerCaptured, this.engine.aiCaptured, false);
+    const oYaku = this.getCompactYakuSummary(this.engine.aiCaptured, this.engine.playerCaptured, true);
+    const yakuBadgeCount = pYaku.nearCount + oYaku.nearCount;
+    return {
+      opp,
+      isPlayerTurn,
+      isMp,
+      oppDisplayName,
+      compactOppSub,
+      showDialogue,
+      roundMonth,
+      jpMonth,
+      yakuBadgeCount
+    };
+  }
+
+  syncCompactHeaderState() {
+    const bar = document.getElementById('hk-compact-topbar');
+    if (!bar) return;
+    const d = this.getCompactHeaderData();
+    const avatarEl = bar.querySelector('.hk-compact-opp-avatar');
+    if (avatarEl && avatarEl.getAttribute('src') !== d.opp.avatar) {
+      avatarEl.setAttribute('src', d.opp.avatar);
+    }
+    const oppNameEl = bar.querySelector('#hk-compact-opp-name');
+    if (oppNameEl) oppNameEl.textContent = d.oppDisplayName;
+    const oppSubEl = bar.querySelector('#hk-compact-opp-sub');
+    if (oppSubEl) oppSubEl.textContent = d.compactOppSub;
+    const oppScoreEl = bar.querySelector('#hk-compact-opp-score');
+    if (oppScoreEl) {
+      oppScoreEl.textContent = `${this.engine.aiScore}${this.engine.aiCalledKoiKoi ? '🔥' : ''}`;
+    }
+    const bubbleEl = bar.querySelector('#hk-compact-speech-bubble');
+    if (bubbleEl) {
+      bubbleEl.textContent = this.currentDialogue || '';
+      bubbleEl.classList.toggle('is-visible', d.showDialogue);
+    }
+    const roundPill = bar.querySelector('#hk-compact-round-pill');
+    if (roundPill) {
+      const k = roundPill.querySelector('.hk-round-kanji');
+      const t = roundPill.querySelector('.hk-round-text');
+      if (k) k.textContent = d.jpMonth;
+      if (t) t.textContent = `Hiệp ${this.engine.currentRound}/${this.engine.totalRounds} · Tháng ${d.roundMonth}`;
+    }
+    const playerChip = bar.querySelector('#hk-compact-player-chip');
+    if (playerChip) {
+      playerChip.classList.toggle('is-turn', d.isPlayerTurn);
+    }
+    const playerSub = bar.querySelector('#hk-compact-player-sub');
+    if (playerSub) {
+      playerSub.textContent = d.isPlayerTurn ? 'Lượt của bạn' : 'Lượt đối thủ';
+    }
+    const playerScore = bar.querySelector('#hk-compact-player-score');
+    if (playerScore) {
+      playerScore.textContent = `${this.engine.playerScore}${this.engine.playerCalledKoiKoi ? '🔥' : ''}`;
+    }
+    const badgeEl = bar.querySelector('#hk-compact-yaku-badge');
+    if (badgeEl) {
+      badgeEl.textContent = String(d.yakuBadgeCount);
+      badgeEl.classList.toggle('is-empty', d.yakuBadgeCount === 0);
+    }
+  }
+
   renderTopNav() {
     const nav = document.getElementById('top-nav');
     if (!nav) return;
@@ -547,8 +1501,9 @@ class HanaKoiApp {
     const totalCollectibles = CARD_BACKS.length + CARD_SKINS.length;
     const currentTrack = soundEngine.getCurrentTrack();
     const isMp = this.isMultiplayerMatch();
+    const cd = this.getCompactHeaderData();
 
-    setElementMarkup(nav, `
+    const navChanged = setElementMarkupIfChanged(nav, `
       <!-- Left: 3 Game Modes Scroll Switcher -->
       <div class="mode-switcher-group okami-scroll-bar">
         <button class="mode-pill-btn ${this.gameMode === 'pve' ? 'active-mode' : ''}" id="btn-mode-pve" title="Chế độ 1: Đấu với 12 Kỳ Thủ Nhật Bản (PvE)">
@@ -595,6 +1550,39 @@ class HanaKoiApp {
             ${this.settingsMenuOpen ? '✕' : '⚙️'}
           </button>
           <div class="nav-settings-dropdown ${this.settingsMenuOpen ? 'open' : ''}" id="nav-settings-dropdown">
+            <!-- Compact Lobby & Mode Section (chỉ hiện trong layout-compact khi mở ≡) -->
+            <div class="hk-compact-only hk-dropdown-lobby-section">
+              <div class="hk-dropdown-section-title">SẢNH & CHẾ ĐỘ CHƠI</div>
+              <div class="hk-dropdown-grid">
+                <button class="dropdown-item-btn ${this.gameMode === 'pve' ? 'is-active-mode' : ''}" id="btn-compact-mode-pve">
+                  <span>⚔️ Đấu Máy</span>
+                  <span class="item-sub">12 Kỳ Thủ</span>
+                </button>
+                <button class="dropdown-item-btn ${this.gameMode === 'pvp' ? 'is-active-mode' : ''}" id="btn-compact-mode-pvp">
+                  <span>🌐 Ghép Trận</span>
+                  <span class="item-sub">PvP Online</span>
+                </button>
+                <button class="dropdown-item-btn ${this.gameMode === 'custom' ? 'is-active-mode' : ''}" id="btn-compact-mode-custom">
+                  <span>🔑 Phòng Mã</span>
+                  <span class="item-sub">${isMp ? '#' + multiplayerService.roomCode : 'Tạo/Vào'}</span>
+                </button>
+                <button class="dropdown-item-btn" id="btn-compact-collection">
+                  <span>🎴 Sưu Tập</span>
+                  <span class="item-sub">${totalOwned}/${totalCollectibles}</span>
+                </button>
+                <button class="dropdown-item-btn" id="btn-compact-gacha">
+                  <span>⛩️ Rút Quẻ</span>
+                  <span class="item-sub">${this.saveData.coins} 🪙</span>
+                </button>
+                <button class="dropdown-item-btn" id="btn-compact-dark">
+                  <span>${this.darkMode ? '☀️ Nền Sáng' : '🌙 Nền Tối'}</span>
+                  <span class="item-sub">${this.darkMode ? 'Washi' : 'Urushi'}</span>
+                </button>
+              </div>
+              <div class="dropdown-divider"></div>
+              <div class="hk-dropdown-section-title">CÀI ĐẶT TRẬN ĐẤU</div>
+            </div>
+
             <div class="speed-selector-box">
               <div class="speed-selector-label">
                 <span>⚡ Tốc độ đánh bài</span>
@@ -628,9 +1616,15 @@ class HanaKoiApp {
               <span>📐 Góc bàn 2.5D</span>
               <span class="item-sub">${this.cameraAngles[this.cameraIndex].label}</span>
             </button>
-            <button class="dropdown-item-btn" id="btn-cycle-diorama-menu">
+            <button class="dropdown-item-btn" id="btn-toggle-perf" title="Đồ họa nhẹ: tắt nghiêng 3D bàn, đổ bóng, làm mờ — mượt hơn trên điện thoại / iPhone">
+              <span>🎨 Đồ họa</span>
+              <span class="item-sub">${
+                { auto: 'Tự động', low: 'Nhẹ', high: 'Đầy đủ' }[getPerfModePref()]
+              }${getPerfModePref() === 'auto' ? (isPerfLow() ? ' · Nhẹ' : ' · Đầy đủ') : ''}</span>
+            </button>
+            <button class="dropdown-item-btn" id="btn-cycle-diorama-menu" title="Ngẫu nhiên mỗi trận → Tháng 1 → Tháng 9 → Tắt">
               <span>🌸 Tiểu cảnh bàn</span>
-              <span class="item-sub">Hoa tháng ${this.tableFlowerMonth}</span>
+              <span class="item-sub">${this.dioramaPrefLabel()}</span>
             </button>
             <div class="dropdown-divider"></div>
             <button class="dropdown-item-btn" id="btn-open-tutorial">
@@ -649,10 +1643,65 @@ class HanaKoiApp {
               <span>🔄 Ván mới</span>
               <span class="item-sub">Chia lại bài</span>
             </button>
+            <div class="dropdown-divider"></div>
+            <div class="app-version-label" style="text-align:center; font-size:12px; opacity:0.6; padding:4px 0 2px;">
+              Phiên bản v${typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'dev'}
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- Compact Top Bar for iPhone Landscape (body.layout-compact) -->
+      <div class="hk-compact-topbar hk-compact-only" id="hk-compact-topbar">
+        <div class="hk-compact-header-left">
+          <div class="nav-settings-wrap hk-compact-menu-wrap">
+            <button class="hk-compact-menu-btn" id="btn-compact-menu" title="Menu sảnh & Cài đặt" aria-label="Menu">
+              ${this.settingsMenuOpen ? '✕' : '≡'}
+            </button>
+          </div>
+          <div class="hk-compact-opp-wrap">
+            <button class="hk-compact-opp-chip" id="btn-compact-opp" title="Đổi đối thủ (${cd.oppDisplayName})">
+              <img src="${cd.opp.avatar}" alt="${cd.oppDisplayName}" class="hk-compact-opp-avatar" />
+              <div class="hk-compact-opp-meta">
+                <span class="hk-compact-opp-name" id="hk-compact-opp-name">${cd.oppDisplayName}</span>
+                <span class="hk-compact-opp-sub" id="hk-compact-opp-sub">${cd.compactOppSub}</span>
+              </div>
+              <span class="hk-compact-score opp-score" id="hk-compact-opp-score">${this.engine.aiScore}${this.engine.aiCalledKoiKoi ? '🔥' : ''}</span>
+            </button>
+            <div class="hk-compact-speech-bubble ${cd.showDialogue ? 'is-visible' : ''}" id="hk-compact-speech-bubble">${this.currentDialogue || ''}</div>
+          </div>
+        </div>
+
+        <div class="hk-compact-round-pill" id="hk-compact-round-pill">
+          <span class="hk-round-kanji">${cd.jpMonth}</span>
+          <span class="hk-round-text">Hiệp ${this.engine.currentRound}/${this.engine.totalRounds} · Tháng ${cd.roundMonth}</span>
+        </div>
+
+        <div class="hk-compact-header-right">
+          <div class="hk-compact-player-chip ${cd.isPlayerTurn ? 'is-turn' : ''}" id="hk-compact-player-chip">
+            <div class="hk-compact-player-meta">
+              <span class="hk-compact-player-name">Bạn</span>
+              <span class="hk-compact-player-sub" id="hk-compact-player-sub">${cd.isPlayerTurn ? 'Lượt của bạn' : 'Lượt đối thủ'}</span>
+            </div>
+            <span class="hk-compact-score player-score" id="hk-compact-player-score">${this.engine.playerScore}${this.engine.playerCalledKoiKoi ? '🔥' : ''}</span>
+          </div>
+          <button class="hk-compact-yaku-btn" id="btn-compact-yaku" title="Xem bảng Yaku & tiến độ bộ">
+            <span class="hk-yaku-kanji">役</span>
+            <span class="hk-yaku-label">Yaku</span>
+            <span class="hk-yaku-badge ${cd.yakuBadgeCount === 0 ? 'is-empty' : ''}" id="hk-compact-yaku-badge">${cd.yakuBadgeCount}</span>
+          </button>
+        </div>
+      </div>
     `);
+    if (!navChanged) {
+      this.syncCompactHeaderState();
+      return;
+    }
+
+    const bindClick = (sel, fn) => {
+      const el = nav.querySelector(sel);
+      if (el) el.onclick = fn;
+    };
 
     nav.querySelector('#btn-mode-pve').onclick = () => {
       this.settingsMenuOpen = false;
@@ -701,6 +1750,39 @@ class HanaKoiApp {
       this.settingsMenuOpen = !this.settingsMenuOpen;
       this.renderTopNav();
     };
+
+    // Compact header & lobby menu bindings
+    bindClick('#btn-compact-menu', (e) => {
+      e.stopPropagation();
+      this.settingsMenuOpen = !this.settingsMenuOpen;
+      this.renderTopNav();
+    });
+    bindClick('#btn-compact-opp', (e) => {
+      e.stopPropagation();
+      if (isMp) {
+        this.activeModal = this.gameMode === 'pvp' ? 'pvp_lobby' : 'custom_room';
+        this.renderActiveModal();
+      } else {
+        this.openOpponentPicker();
+      }
+    });
+    bindClick('#btn-compact-yaku', (e) => {
+      e.stopPropagation();
+      this.settingsMenuOpen = false;
+      this.activeModal = 'rules';
+      this.renderTopNav();
+      this.renderActiveModal();
+    });
+    bindClick('#btn-compact-mode-pve', () => nav.querySelector('#btn-mode-pve').click());
+    bindClick('#btn-compact-mode-pvp', () => nav.querySelector('#btn-mode-pvp').click());
+    bindClick('#btn-compact-mode-custom', () => nav.querySelector('#btn-mode-custom').click());
+    bindClick('#btn-compact-collection', () => nav.querySelector('#btn-open-collection').click());
+    bindClick('#btn-compact-gacha', () => nav.querySelector('#btn-open-gacha').click());
+    bindClick('#btn-compact-dark', (e) => {
+      e.stopPropagation();
+      this.toggleDarkMode();
+    });
+
     nav.querySelectorAll('[data-anim-speed]').forEach((btn) => {
       btn.onclick = (e) => {
         e.stopPropagation();
@@ -721,7 +1803,7 @@ class HanaKoiApp {
     nav.querySelector('#btn-toggle-sound').onclick = (e) => {
       e.stopPropagation();
       const on = soundEngine.toggleSfx();
-      if (on) soundEngine.playCardHover();
+      if (on) soundEngine.playCardFlip();
       this.renderTopNav();
     };
     nav.querySelector('#btn-toggle-cam').onclick = (e) => {
@@ -731,6 +1813,12 @@ class HanaKoiApp {
         '--board-tilt',
         this.cameraAngles[this.cameraIndex].deg
       );
+      this.renderTopNav();
+    };
+    nav.querySelector('#btn-toggle-perf').onclick = (e) => {
+      e.stopPropagation();
+      const order = ['auto', 'low', 'high'];
+      setPerfMode(order[(order.indexOf(getPerfModePref()) + 1) % order.length]);
       this.renderTopNav();
     };
     nav.querySelector('#btn-open-tutorial').onclick = () => {
@@ -743,8 +1831,12 @@ class HanaKoiApp {
       this.renderActiveModal();
     };
     nav.querySelector('#btn-cycle-diorama-menu').onclick = () => {
+      // Ngẫu nhiên -> Tháng 1 -> Tháng 9 -> Tắt -> Ngẫu nhiên
+      const order = ['random', ...AVAILABLE_DIORAMA_MONTHS.map(String), 'off'];
+      this.saveData.dioramaPref = order[(order.indexOf(this.getDioramaPref()) + 1) % order.length];
+      this.persistSave();
       this.rollNewTableFlowerMonth();
-      soundEngine.playCardHover();
+      soundEngine.playCardFlip();
       this.renderCenterBoard();
       this.renderTopNav();
     };
@@ -756,11 +1848,19 @@ class HanaKoiApp {
     nav.querySelector('#btn-restart-match').onclick = () => {
       this.settingsMenuOpen = false;
       if (isMp) {
+        // Chỉ chủ phòng được chia lại bài cho trận mới
+        if (multiplayerService.role !== 'host') {
+          this.currentDialogue = 'Chỉ chủ phòng mới bắt đầu lại trận được.';
+          this.renderAll();
+          return;
+        }
         this.rollNewTableFlowerMonth();
+        this.bumpMatchToken();
         this.engine.startNewMatch(this.engine.totalRounds);
         const canonical = this.engine.exportCanonicalState(multiplayerService.role, null);
         multiplayerService.syncRoomState(canonical, { type: 'MATCH_START' });
         this.renderAll();
+        this.runRoundOpeningSequence();
       } else {
         this.startMatchWithOpponent(this.currentOpponent.id, this.engine.totalRounds);
       }
@@ -768,6 +1868,7 @@ class HanaKoiApp {
   }
 
   renderLeftPanel() {
+    this.syncCompactHeaderState();
     const left = document.getElementById('left-panel');
     if (!left) return;
     const opp = this.currentOpponent;
@@ -781,7 +1882,7 @@ class HanaKoiApp {
 
     const roundMonth = ((this.engine.currentRound - 1) % 12) + 1;
 
-    setElementMarkup(left, `
+    const leftChanged = setElementMarkupIfChanged(left, `
       <!-- 3:4 Kakejiku Hanging Scroll Character Portrait -->
       <div class="opponent-vn-card okami-kakejiku">
         <div class="scroll-roller-bar top"></div>
@@ -824,6 +1925,7 @@ class HanaKoiApp {
         <div class="scroll-roller-bar bottom"></div>
       </div>
     `);
+    if (!leftChanged) return;
     const swapBtn = left.querySelector('#btn-swap-opp');
     if (swapBtn) swapBtn.onclick = (e) => {
       e.stopPropagation();
@@ -900,8 +2002,32 @@ class HanaKoiApp {
     const isMp = this.isMultiplayerMatch();
     const equippedBack = this.saveData.equippedBack;
     const equippedSkin = this.saveData.equippedSkin;
+    // Bước 4: vẽ sẵn bitmap mặt lá của skin đang dùng (chỉ chạy 1 lần cho mỗi skin/kích thước)
+    prewarmCardBack(equippedBack);
+    prewarmCardFaces(equippedSkin, true);
+    prewarmCardFaces(equippedSkin, false);
 
     const aiBackId = equippedBack;
+    const isCompact = document.body.classList.contains('layout-compact');
+
+    if (
+      this.selectedHandCardId &&
+      (!this.engine.phase.startsWith('PLAYER') ||
+        !this.engine.playerHand.some((c) => c.id === this.selectedHandCardId))
+    ) {
+      this.selectedHandCardId = null;
+    }
+
+    const activeSelectedHandCard =
+      this.engine.phase === 'PLAYER_SELECT_FIELD_HAND'
+        ? this.engine.pendingCard
+        : isCompact && this.selectedHandCardId
+        ? this.engine.playerHand.find((c) => c.id === this.selectedHandCardId) || null
+        : null;
+
+    if (isCompact && this.engine.phase === 'PLAYER_HAND' && activeSelectedHandCard) {
+      this.hoveredHandCardMonth = activeSelectedHandCard.month;
+    }
 
     const candidateIds = new Set(this.engine.matchingFieldCandidates.map((c) => c.id));
     const fieldMonthsSet = new Set(this.engine.field.map((c) => c.month));
@@ -910,20 +2036,14 @@ class HanaKoiApp {
         ? this.engine.drawnCard || this.engine.pendingCard
         : null;
 
-    let instructionText =
-      '🟢 LƯỢT CỦA BẠN · Lá có chấm ngọc sẽ ăn được bài cùng Tháng trên chiếu';
-    if (this.engine.phase === 'PLAYER_SELECT_FIELD_HAND') {
-      instructionText = `🎯 Chọn 1 trong 2 lá Tháng ${this.engine.pendingCard?.month} phát sáng trên bàn để ăn`;
-    } else if (this.engine.phase === 'PLAYER_SELECT_FIELD_DRAW') {
-      instructionText = `🎯 Lá vừa bốc (${pendingDrawnCard?.viName || ''} · Tháng ${this.engine.pendingCard?.month}) khớp 2 lá trên bàn · Chọn lá muốn lấy`;
-    } else if (this.engine.phase === 'AI_TURN') {
-      instructionText = isMp
-        ? `⏳ Đang chờ ${oppDisplayName} đánh bài...`
-        : `⏳ ${opp.name} đang suy nghĩ nước đi...`;
-    }
-
     const hasRow3 = this.engine.hasFieldRow3();
-    const visualSlotOrder = hasRow3
+    const hasCompactCol6 =
+      isCompact && Boolean(this.engine.fieldSlots[10] || this.engine.fieldSlots[11]);
+    const visualSlotOrder = isCompact
+      ? hasCompactCol6
+        ? [4, 5, 6, 7, 8, 10, 0, 1, 2, 3, 9, 11]
+        : [4, 5, 6, 7, 8, 0, 1, 2, 3, 9]
+      : hasRow3
       ? [8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]
       : [4, 5, 6, 7, 0, 1, 2, 3];
 
@@ -935,6 +2055,7 @@ class HanaKoiApp {
     if (stage.dataset.sceneKey !== sceneKey || !stage.querySelector('.tabletop-25d-board')) {
       this.buildCenterBoardShell(stage);
       stage.dataset.sceneKey = sceneKey;
+      this.mountDioramaActors(stage);
     }
 
     const board = stage.querySelector('.tabletop-25d-board');
@@ -943,27 +2064,43 @@ class HanaKoiApp {
       board.className = boardClass;
     }
 
-
-    replaceElementWithMarkup(board.querySelector(':scope > .ai-hand-wrapper'), `
+    // Chỉ cập nhật phần thay đổi (từng lá đối thủ / ô bàn / lá trên tay): lá giữ nguyên thì giữ nguyên
+    // DOM, nên lúc đánh/ăn/bốc không phải parse + vẽ lại cả bàn giữa animation.
+    let aiWrap = board.querySelector(':scope > .ai-hand-wrapper');
+    if (!aiWrap || !aiWrap.querySelector(':scope > .ai-hand-zone')) {
+      aiWrap = replaceElementWithMarkup(aiWrap, `
           <!-- Opponent Hand (Face Down - Kept Clean & Unblurred) -->
           <div class="ai-hand-wrapper">
-            <div class="ai-hand-zone">
-              ${this.engine.aiHand
-                .map(
-                  () => `
+            <div class="ai-hand-zone"></div>
+            <span class="hk-compact-only hk-ai-hand-count"></span>
+          </div>
+      `);
+    }
+    const aiCardMarkup = `
                 <div class="hana-card-3d ai-small-card" title="Bài trên tay của ${oppDisplayName}">
                   ${renderCardBackSVG(aiBackId)}
                 </div>
-              `
-                )
-                .join('')}
-            </div>
-          </div>
-    `);
+              `;
+    patchKeyedChildren(
+      aiWrap.querySelector(':scope > .ai-hand-zone'),
+      this.engine.aiHand.map((_, i) => ({ key: i, markup: aiCardMarkup }))
+    );
+    const aiCountEl = aiWrap.querySelector(':scope > .hk-ai-hand-count');
+    const aiCountText = `${this.engine.aiHand.length} lá`;
+    if (aiCountEl.textContent !== aiCountText) aiCountEl.textContent = aiCountText;
 
-    replaceElementWithMarkup(board.querySelector(':scope > .field-ba-zone'), `
+    let fieldZone = board.querySelector(':scope > .field-ba-zone');
+    if (!fieldZone || !fieldZone.querySelector(':scope > #field-cards-grid')) {
+      fieldZone = replaceElementWithMarkup(fieldZone, `
           <!-- Center Field (Fixed Draw Deck Stack + Fixed-Slot 2x4 / 3x4 Field Card Grid) -->
           <div class="field-ba-zone">
+            <div class="draw-pile-container"></div>
+            <div class="field-cards-grid" id="field-cards-grid"></div>
+          </div>
+      `);
+    }
+
+    const pileMarkup = `
             <!-- Fixed 3D Draw Pile (Yama) Locked on the Left Side of the Field -->
             <div class="draw-pile-container ${pendingDrawnCard ? 'has-drawn-reveal' : ''}" title="${pendingDrawnCard ? `Lá vừa bốc: ${pendingDrawnCard.viName} (Tháng ${pendingDrawnCard.month}) — Chọn 1 trong 2 lá cùng tháng trên bàn` : `Bộ bài bốc cố định trên bàn (Còn ${this.engine.deck.length} lá)`}">
               <div class="draw-pile-stack" id="draw-pile-stack">
@@ -981,55 +2118,76 @@ class HanaKoiApp {
                   : ''
               }
               <div class="draw-count-badge" title="Số lá còn trong bộ bài">${this.engine.deck.length}</div>
-            </div>
+            </div>`;
+    const pileEl = fieldZone.querySelector(':scope > .draw-pile-container');
+    if (pileEl._hkMarkup !== pileMarkup) {
+      const freshPile = replaceElementWithMarkup(pileEl, pileMarkup);
+      freshPile._hkMarkup = pileMarkup;
+      const drawnRevealEl = freshPile.querySelector('#drawn-card-reveal');
+      if (drawnRevealEl) this.bindDrawnRevealEl(drawnRevealEl);
+    }
 
-            <!-- Fixed-Slot Face-up Field Cards (2x4 expanding to 3x4) -->
-            <div class="field-cards-grid ${hasRow3 ? 'has-row-3' : 'rows-2'}" id="field-cards-grid">
-              ${visualSlotOrder
-                .map((slotIdx) => {
-                  const card = this.engine.fieldSlots[slotIdx];
-                  if (!card) {
-                    return `<div class="field-card-slot empty" data-slot-index="${slotIdx}" aria-hidden="true"></div>`;
-                  }
-                  const isChoiceCandidate = candidateIds.has(card.id);
-                  const isHoverMatch =
-                    this.hoveredHandCardMonth === card.month && !isChoiceCandidate;
-                  const extraClass = isChoiceCandidate
-                    ? 'field-choice-candidate'
-                    : isHoverMatch
-                    ? 'field-match-highlight'
-                    : '';
-
-                  return `
+    // Fixed-Slot Face-up Field Cards (2x4 expanding to 3x4; 2x5 on layout-compact)
+    const grid = fieldZone.querySelector(':scope > #field-cards-grid');
+    const gridClass = `field-cards-grid ${hasRow3 ? 'has-row-3' : 'rows-2'} ${hasCompactCol6 ? 'compact-cols-6' : ''}`;
+    if (grid.className !== gridClass) grid.className = gridClass;
+    const slotItems = visualSlotOrder.map((slotIdx) => {
+      const card = this.engine.fieldSlots[slotIdx];
+      if (!card) {
+        return {
+          key: slotIdx,
+          markup: `<div class="field-card-slot empty" data-slot-index="${slotIdx}" aria-hidden="true"></div>`
+        };
+      }
+      const isChoiceCandidate = candidateIds.has(card.id);
+      const isHoverMatch = this.hoveredHandCardMonth === card.month && !isChoiceCandidate;
+      const extraClass = isChoiceCandidate
+        ? 'field-choice-candidate'
+        : isHoverMatch
+        ? 'field-match-highlight'
+        : '';
+      return {
+        key: slotIdx,
+        markup: `
                     <div class="field-card-slot occupied" data-slot-index="${slotIdx}">
                       <div class="hana-card-3d ${extraClass}"
                            data-field-id="${card.id}"
                            data-slot-index="${slotIdx}"
                            data-month="${card.month}"
                            title="${card.viName} (${card.jpName}) - Tháng ${card.month} (${card.points}đ)">
+                        <span class="hk-compact-only hk-field-eat-badge">Ăn</span>
                         ${renderCardFaceSVG(card, equippedSkin, true)}
                       </div>
                     </div>
-                  `;
-                })
-                .join('')}
-            </div>
-          </div>
-    `);
+                  `
+      };
+    });
+    patchKeyedChildren(grid, slotItems).forEach((slotEl) => {
+      const fieldEl = slotEl.querySelector('[data-field-id]');
+      if (fieldEl) this.bindFieldCardEl(fieldEl);
+      else this.bindEmptySlotEl(slotEl);
+    });
 
-    replaceElementWithMarkup(stage.querySelector(':scope > .player-hand-zone'), `
+    let handZone = stage.querySelector(':scope > .player-hand-zone');
+    if (!handZone || !handZone.querySelector('#player-hand-cards')) {
+      handZone = replaceElementWithMarkup(handZone, `
       <!-- Player Hand Foreground Dock (Okami Brush Splash & Washi Scroll Tray) -->
       <div class="player-hand-zone okami-tefuda-dock">
         <div class="scroll-roller-bar top"></div>
-        <div class="turn-instruction-bar">${instructionText}</div>
-        <div class="player-hand-cards" id="player-hand-cards">
-          ${this.engine.playerHand
-            .map((card) => {
-              const hasMatch = fieldMonthsSet.has(card.month);
-              const isSelected =
-                this.engine.phase === 'PLAYER_SELECT_FIELD_HAND' &&
-                this.engine.pendingCard?.id === card.id;
-              return `
+        <div class="player-hand-cards" id="player-hand-cards"></div>
+        <div class="scroll-roller-bar bottom"></div>
+      </div>
+      `);
+    }
+    const handItems = this.engine.playerHand.map((card) => {
+      const hasMatch = fieldMonthsSet.has(card.month);
+      const isSelected =
+        (this.engine.phase === 'PLAYER_SELECT_FIELD_HAND' &&
+          this.engine.pendingCard?.id === card.id) ||
+        (isCompact && activeSelectedHandCard?.id === card.id);
+      return {
+        key: card.id,
+        markup: `
                 <div class="hana-card-3d ${hasMatch ? 'has-field-match' : ''} ${isSelected ? 'selected-hand-card' : ''}"
                      data-hand-id="${card.id}"
                      data-month="${card.month}"
@@ -1041,127 +2199,175 @@ class HanaKoiApp {
                   }
                   ${renderCardFaceSVG(card, equippedSkin, true)}
                 </div>
-              `;
-            })
-            .join('')}
-        </div>
-        <div class="scroll-roller-bar bottom"></div>
-      </div>
-    `);
+              `
+      };
+    });
+    patchKeyedChildren(handZone.querySelector('#player-hand-cards'), handItems).forEach((el) =>
+      this.bindHandCardEl(el)
+    );
+  }
 
-    const handEls = stage.querySelectorAll('[data-hand-id]');
-    handEls.forEach((el) => {
-      const cardId = Number(el.getAttribute('data-hand-id'));
-      const month = Number(el.getAttribute('data-month'));
+  // Sự kiện gắn cho từng lá khi lá đó được tạo; trạng thái (ứng viên, tháng trên bàn) đọc lúc bấm
+  // vì phần tử có thể được giữ lại qua nhiều lần render.
+  bindHandCardEl(el) {
+    const cardId = Number(el.getAttribute('data-hand-id'));
+    const month = Number(el.getAttribute('data-month'));
 
-      el.addEventListener('mouseenter', () => {
-        if (
-          this.engine.phase !== 'PLAYER_HAND' &&
-          this.engine.phase !== 'PLAYER_SELECT_FIELD_HAND'
-        ) {
-          return;
-        }
-        soundEngine.playCardHover();
-        this.hoveredHandCardMonth = month;
-        this.updateFieldHighlightOnly();
-      });
-
-      el.addEventListener('mouseleave', () => {
-        if (this.hoveredHandCardMonth !== null) {
-          this.hoveredHandCardMonth = null;
-          this.updateFieldHighlightOnly();
-        }
-      });
-
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (
-          this.engine.phase !== 'PLAYER_HAND' &&
-          this.engine.phase !== 'PLAYER_SELECT_FIELD_HAND'
-        ) {
-          return;
-        }
-        this.handlePlayerPlayHandCard(cardId, e.clientX, e.clientY);
-      });
+    el.addEventListener('mouseenter', () => {
+      if (this.isAnimating) return;
+      if (document.body.classList.contains('layout-compact')) return;
+      if (
+        this.engine.phase !== 'PLAYER_HAND' &&
+        this.engine.phase !== 'PLAYER_SELECT_FIELD_HAND'
+      ) {
+        return;
+      }
+      soundEngine.playCardHover();
+      this.hoveredHandCardMonth = month;
+      this.updateFieldHighlightOnly();
     });
 
-    const fieldEls = stage.querySelectorAll('[data-field-id]');
-    fieldEls.forEach((el) => {
-      const fieldCardId = Number(el.getAttribute('data-field-id'));
-      const fieldMonth = Number(el.getAttribute('data-month'));
+    el.addEventListener('mouseleave', () => {
+      if (document.body.classList.contains('layout-compact')) return;
+      if (this.hoveredHandCardMonth !== null) {
+        this.hoveredHandCardMonth = null;
+        this.updateFieldHighlightOnly();
+      }
+    });
 
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this._suppressNextClick || this.isAnimating) return;
+      if (
+        this.engine.phase !== 'PLAYER_HAND' &&
+        this.engine.phase !== 'PLAYER_SELECT_FIELD_HAND'
+      ) {
+        return;
+      }
+      if (document.body.classList.contains('layout-compact')) {
+        if (this.engine.phase === 'PLAYER_HAND' && this.selectedHandCardId !== cardId) {
+          this.selectedHandCardId = cardId;
+          this.hoveredHandCardMonth = month;
+          soundEngine.playCardFlip();
+          this.renderCenterBoard();
+          return;
+        }
         if (
           this.engine.phase === 'PLAYER_SELECT_FIELD_HAND' &&
-          candidateIds.has(fieldCardId)
+          this.engine.pendingCard?.id !== cardId
         ) {
-          this.handlePlayerSelectFieldTarget(fieldCardId, e.clientX, e.clientY);
-        } else if (
-          this.engine.phase === 'PLAYER_SELECT_FIELD_DRAW' &&
-          candidateIds.has(fieldCardId)
-        ) {
-          this.handlePlayerSelectDrawTarget(fieldCardId, e.clientX, e.clientY);
-        } else if (
-          this.engine.phase === 'PLAYER_HAND' ||
-          this.engine.phase === 'PLAYER_SELECT_FIELD_HAND'
-        ) {
-          const matchingHandCard = this.engine.playerHand.find(
-            (c) => c.month === fieldMonth
-          );
-          if (matchingHandCard) {
-            this.handlePlayerPlayHandCard(
-              matchingHandCard.id,
-              e.clientX,
-              e.clientY,
-              fieldCardId
-            );
-          }
+          this.engine.phase = 'PLAYER_HAND';
+          this.engine.pendingCard = null;
+          this.engine.matchingFieldCandidates = [];
+          this.selectedHandCardId = cardId;
+          this.hoveredHandCardMonth = month;
+          soundEngine.playCardFlip();
+          this.renderCenterBoard();
+          return;
         }
-      });
+      }
+      this.selectedHandCardId = null;
+      this.handlePlayerPlayHandCard(cardId, e.clientX, e.clientY);
     });
+  }
 
-    const drawnRevealEl = stage.querySelector('#drawn-card-reveal');
-    if (drawnRevealEl) {
-      drawnRevealEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (
-          this.engine.phase === 'PLAYER_SELECT_FIELD_DRAW' &&
-          this.engine.matchingFieldCandidates.length > 0
-        ) {
-          const bestTarget = [...this.engine.matchingFieldCandidates].sort(
-            (a, b) => b.points - a.points
-          )[0];
-          if (bestTarget) {
-            this.handlePlayerSelectDrawTarget(bestTarget.id, e.clientX, e.clientY);
-          }
+  bindFieldCardEl(el) {
+    const fieldCardId = Number(el.getAttribute('data-field-id'));
+    const fieldMonth = Number(el.getAttribute('data-month'));
+
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this._suppressNextClick || this.isAnimating) return;
+      const isCandidate = this.engine.matchingFieldCandidates.some((c) => c.id === fieldCardId);
+      if (this.engine.phase === 'PLAYER_SELECT_FIELD_HAND' && isCandidate) {
+        this.selectedHandCardId = null;
+        this.handlePlayerSelectFieldTarget(fieldCardId, e.clientX, e.clientY);
+      } else if (this.engine.phase === 'PLAYER_SELECT_FIELD_DRAW' && isCandidate) {
+        this.selectedHandCardId = null;
+        this.handlePlayerSelectDrawTarget(fieldCardId, e.clientX, e.clientY);
+      } else if (
+        this.engine.phase === 'PLAYER_HAND' ||
+        this.engine.phase === 'PLAYER_SELECT_FIELD_HAND'
+      ) {
+        const selectedHand =
+          this.selectedHandCardId &&
+          this.engine.playerHand.find(
+            (c) => c.id === this.selectedHandCardId && c.month === fieldMonth
+          );
+        const matchingHandCard =
+          selectedHand || this.engine.playerHand.find((c) => c.month === fieldMonth);
+        if (matchingHandCard) {
+          this.selectedHandCardId = null;
+          this.handlePlayerPlayHandCard(matchingHandCard.id, e.clientX, e.clientY, fieldCardId);
         }
-      });
-    }
+      }
+    });
+  }
+
+  bindEmptySlotEl(slotEl) {
+    slotEl.addEventListener('click', (e) => {
+      if (this.isAnimating) return;
+      if (!document.body.classList.contains('layout-compact')) return;
+      if (this.engine.phase !== 'PLAYER_HAND' || !this.selectedHandCardId) return;
+      const sel = this.engine.playerHand.find((c) => c.id === this.selectedHandCardId);
+      if (sel && !this.engine.field.some((c) => c.month === sel.month)) {
+        e.stopPropagation();
+        this.selectedHandCardId = null;
+        this.handlePlayerPlayHandCard(sel.id, e.clientX, e.clientY);
+      }
+    });
+  }
+
+  bindDrawnRevealEl(drawnRevealEl) {
+    drawnRevealEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this._suppressNextClick) return;
+      if (
+        this.engine.phase === 'PLAYER_SELECT_FIELD_DRAW' &&
+        this.engine.matchingFieldCandidates.length > 0
+      ) {
+        const bestTarget = [...this.engine.matchingFieldCandidates].sort(
+          (a, b) => b.points - a.points
+        )[0];
+        if (bestTarget) {
+          this.handlePlayerSelectDrawTarget(bestTarget.id, e.clientX, e.clientY);
+        }
+      }
+    });
   }
 
   updateFieldHighlightOnly() {
     const fieldEls = document.querySelectorAll('[data-field-id]');
     fieldEls.forEach((el) => {
       const m = Number(el.getAttribute('data-month'));
-      if (this.hoveredHandCardMonth === m) {
-        el.classList.add('field-match-highlight');
-      } else {
-        el.classList.remove('field-match-highlight');
-      }
+      const want = this.hoveredHandCardMonth === m;
+      if (el.classList.contains('field-match-highlight') === want) return;
+      el.classList.toggle('field-match-highlight', want);
+      // DOM đã khác markup đã lưu → lần render sau dựng lại ô này
+      const slotEl = el.closest('.field-card-slot');
+      if (slotEl) slotEl._hkMarkup = null;
     });
   }
 
   renderRightPanel() {
+    this.syncCompactHeaderState();
     const right = document.getElementById('right-panel');
+    if (!right) return;
     const equippedSkin = this.saveData.equippedSkin;
 
-    setElementMarkup(right, `
+    // Mỗi khối (nút Yaku, khay đối thủ, khay của bạn) chỉ dựng lại khi nội dung khối đó đổi
+    patchKeyedChildren(right, [
+      {
+        key: 'yaku-btn',
+        markup: `
       <!-- Yaku list button (opens the full Yaku table) -->
       <button class="yaku-list-btn okami-makimono-box" id="btn-yaku-more" title="Xem bảng Yaku">
         <span class="hanko-seal">役</span> YAKU LIST
-      </button>
-
+      </button>`
+      },
+      {
+        key: 'ai-tray',
+        markup: `
       <!-- Opponent Captured Cards Hanging Scroll -->
       <div class="captured-tray-box okami-makimono-box" id="ai-captured-tray">
         <div class="scroll-roller-bar top"></div>
@@ -1169,9 +2375,13 @@ class HanaKoiApp {
           <span>BÀI ĐỐI THỦ (${this.engine.aiCaptured.length})</span>
         </div>
         ${this.renderCategorizedCapturedHTML(this.engine.aiCaptured, equippedSkin)}
+        ${this.renderCompactCapturedBlockHTML(this.engine.aiCaptured, this.engine.playerCaptured, equippedSkin, true)}
         <div class="scroll-roller-bar bottom"></div>
-      </div>
-
+      </div>`
+      },
+      {
+        key: 'player-tray',
+        markup: `
       <!-- Player Captured Cards Hanging Scroll -->
       <div class="captured-tray-box okami-makimono-box" id="player-captured-tray">
         <div class="scroll-roller-bar top"></div>
@@ -1179,26 +2389,92 @@ class HanaKoiApp {
           <span>BÀI CỦA BẠN (${this.engine.playerCaptured.length})</span>
         </div>
         ${this.renderCategorizedCapturedHTML(this.engine.playerCaptured, equippedSkin)}
+        ${this.renderCompactCapturedBlockHTML(this.engine.playerCaptured, this.engine.aiCaptured, equippedSkin, false)}
         <div class="scroll-roller-bar bottom"></div>
-      </div>
-    `);
+      </div>`
+      }
+    ]);
 
-    const yakuMoreBtn = right.querySelector('#btn-yaku-more');
-    if (yakuMoreBtn) {
-      yakuMoreBtn.onclick = () => {
+    // Gắn sự kiện 1 lần cho cả panel (ủy quyền), nên khối nào giữ nguyên DOM vẫn bấm được
+    if (right._hkClickBound) return;
+    right._hkClickBound = true;
+    right.addEventListener('click', (e) => {
+      if (e.target.closest('#btn-yaku-more')) {
         this.activeModal = 'rules';
         this.renderActiveModal();
-      };
-    }
-
-    right.querySelectorAll('[data-inspect-id]').forEach((el) => {
-      el.addEventListener('click', () => {
-        this.inspectedCardId = Number(el.getAttribute('data-inspect-id'));
+        return;
+      }
+      // Bấm ô "đã ăn" mở panel toàn bộ lá đã ăn của đúng người đó (bảng Yaku vẫn mở bằng nút 役 Yaku)
+      const box = e.target.closest('.hk-cap-compact-block');
+      if (box) {
+        if (this._suppressNextClick) return;
+        e.stopPropagation();
+        this.capturedViewSide = box.classList.contains('is-opp') ? 'ai' : 'player';
+        this.activeModal = 'captured_view';
+        this.renderActiveModal();
+        return;
+      }
+      const inspectEl = e.target.closest('.captured-categories [data-inspect-id]');
+      if (inspectEl) {
+        this.inspectedCardId = Number(inspectEl.getAttribute('data-inspect-id'));
         this.collectionTab = 'compendium';
         this.activeModal = 'collection';
         this.renderActiveModal();
-      });
+      }
     });
+  }
+
+  renderCompactCapturedBlockHTML(myCards, oppCards, skinId, isOpponent) {
+    const cols = [
+      { label: 'Quang', list: myCards.filter((c) => c.type === 'hikari') },
+      { label: 'Thú', list: myCards.filter((c) => c.type === 'tane') },
+      { label: 'Dải', list: myCards.filter((c) => c.type === 'tanzaku') },
+      { label: 'Thường', list: myCards.filter((c) => c.type === 'kasu') }
+    ];
+    const summary = this.getCompactYakuSummary(myCards, oppCards, isOpponent);
+    const pct = Math.max(0, Math.min(100, Math.round(summary.chipRatio * 100)));
+
+    return `
+      <div class="hk-compact-only hk-cap-compact-block ${isOpponent ? 'is-opp' : 'is-player'}" title="Chạm để xem toàn bộ lá đã ăn">
+        <div class="hk-cap-head">
+          <span class="hk-cap-title">${isOpponent ? 'ĐỐI THỦ ĐÃ ĂN' : 'BẠN ĐÃ ĂN'}</span>
+          <span class="hk-cap-count">${myCards.length} lá</span>
+        </div>
+        <div class="hk-cap-4cols">
+          ${cols
+            .map(
+              (g) => `
+            <div class="hk-cap-col">
+              <div class="hk-cap-stack ${g.list.length === 0 ? 'is-empty' : ''}">
+                ${
+                  g.list.length === 0
+                    ? '<div class="hk-cap-empty-slot"></div>'
+                    : g.list
+                        .slice(0, 5)
+                        .map(
+                          (c, idx) => `
+                        <div class="hk-cap-mini-card" data-inspect-id="${c.id}" style="z-index:${idx + 1}">
+                          ${renderCardFaceSVG(c, skinId, false)}
+                        </div>
+                      `
+                        )
+                        .join('')
+                }
+              </div>
+              <div class="hk-cap-col-label">${g.label} <strong>${g.list.length}</strong></div>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+        <div class="hk-cap-progress-chip ${isOpponent ? 'chip-warn' : 'chip-good'}">
+          <span class="hk-cap-chip-text">${summary.chipLabel}</span>
+          <span class="hk-cap-bar-track">
+            <span class="hk-cap-bar-fill" style="width:${pct}%"></span>
+          </span>
+        </div>
+      </div>
+    `;
   }
 
   renderCategorizedCapturedHTML(cards, skinId) {
@@ -1267,7 +2543,7 @@ class HanaKoiApp {
 
     if (res.status === 'NEEDS_FIELD_SELECTION') {
       this.pendingHandCardRect = fromRect;
-      soundEngine.playCardHover();
+      soundEngine.playCardFlip();
       this.renderAll();
       return;
     }
@@ -1291,77 +2567,85 @@ class HanaKoiApp {
 
   async animatePlayerHandStepResult(res, fromRect, fieldRects) {
     this.isAnimating = true;
-    const skinId = this.saveData.equippedSkin;
-    this.pendingMpMoveAction = {
-      type: 'TURN_MOVE',
-      handCard: res.card,
-      capturedHand: res.captured || [],
-      drawnCard: null,
-      capturedDraw: []
-    };
+    try {
+      const skinId = this.saveData.equippedSkin;
+      this.pendingMpMoveAction = {
+        type: 'TURN_MOVE',
+        handCard: res.card,
+        capturedHand: res.captured || [],
+        drawnCard: null,
+        capturedDraw: []
+      };
 
-    if (res.captured && res.captured.length > 0) {
-      this.renderCenterBoard();
-      this.renderLeftPanel();
+      await this.safeAnimate(async () => {
+        soundEngine.playCardDeal(0.38);
 
-      const matchedCards = res.captured.slice(1);
-      const targetRect = fieldRects[matchedCards[0]?.id];
-      const relocatedIds = (this.engine.lastFieldRelocations || []).map((r) => r.card.id);
-      const relocPromise = cardAnimator.animateFieldRelocations(fieldRects, {
-        delayMs: 220,
-        relocatedIds
+        if (res.captured && res.captured.length > 0) {
+          this.renderCenterBoard();
+          this.renderLeftPanel();
+
+          const matchedCards = res.captured.slice(1);
+          const targetRect = fieldRects[matchedCards[0]?.id];
+          const relocatedIds = (this.engine.lastFieldRelocations || []).map((r) => r.card.id);
+          const relocPromise = cardAnimator.animateFieldRelocations(fieldRects, {
+            delayMs: 220,
+            relocatedIds
+          });
+
+          await Promise.all([
+            cardAnimator.animateCaptureSequence({
+              actor: 'player',
+              playedCard: res.card,
+              matchedCards,
+              skinId,
+              fromRect,
+              fieldTargetRect: targetRect,
+              onImpactSound: (gotBright) => {
+                soundEngine.playCardSnap(gotBright);
+                if (targetRect) {
+                  this.particles.triggerBurst(
+                    targetRect.left + targetRect.width / 2,
+                    targetRect.top + targetRect.height / 2,
+                    gotBright ? '#ffd166' : '#ff758f',
+                    gotBright ? 36 : 22
+                  );
+                }
+                if (gotBright) {
+                  this.currentDialogue = this.pickRandom(
+                    this.currentOpponent.dialogues.playerCaptureBright
+                  );
+                }
+                const hasHighCard = res.captured.some((c) => c.points >= 5);
+                this.triggerOpponentTeaseLine(gotBright || hasHighCard);
+              }
+            }),
+            relocPromise
+          ]);
+
+          this.renderRightPanel();
+          this.renderLeftPanel();
+        } else {
+          this.renderCenterBoard();
+          const shiftPromise = cardAnimator.animateFieldRelocations(fieldRects, {
+            delayMs: 0
+          });
+          await Promise.all([
+            cardAnimator.animateCardToFieldSlot({
+              card: res.card,
+              skinId,
+              fromRect,
+              toFieldCardId: res.card.id,
+              onLandSound: () => soundEngine.playCardSnap(false)
+            }),
+            shiftPromise
+          ]);
+        }
       });
 
-      await Promise.all([
-        cardAnimator.animateCaptureSequence({
-          actor: 'player',
-          playedCard: res.card,
-          matchedCards,
-          skinId,
-          fromRect,
-          fieldTargetRect: targetRect,
-          onImpactSound: (gotBright) => {
-            soundEngine.playCardSnap(gotBright);
-            if (targetRect) {
-              this.particles.triggerBurst(
-                targetRect.left + targetRect.width / 2,
-                targetRect.top + targetRect.height / 2,
-                gotBright ? '#ffd166' : '#ff758f',
-                gotBright ? 36 : 22
-              );
-            }
-            if (gotBright) {
-              this.currentDialogue = this.pickRandom(
-                this.currentOpponent.dialogues.playerCaptureBright
-              );
-            }
-            const hasHighCard = res.captured.some((c) => c.points >= 5);
-            this.triggerOpponentTeaseLine(gotBright || hasHighCard);
-          }
-        }),
-        relocPromise
-      ]);
-
-      this.renderRightPanel();
-      this.renderLeftPanel();
-    } else {
-      this.renderCenterBoard();
-      const shiftPromise = cardAnimator.animateFieldRelocations(fieldRects, {
-        delayMs: 0
-      });
-      await Promise.all([
-        cardAnimator.animateCardToFieldSlot({
-          card: res.card,
-          skinId,
-          fromRect,
-          toFieldCardId: res.card.id,
-          onLandSound: () => soundEngine.playCardSnap(false)
-        }),
-        shiftPromise
-      ]);
+      await this.executePlayerDrawStep();
+    } catch (err) {
+      this.recoverFromAnimationError(err, 'lượt đánh bài của bạn');
     }
-
-    await this.executePlayerDrawStep();
   }
 
   async executePlayerDrawStep() {
@@ -1372,25 +2656,32 @@ class HanaKoiApp {
     if (drawRes.status === 'DRAW_NEEDS_SELECTION') {
       this.pendingDrawRect = deckRect;
       this.isAnimating = false;
-      soundEngine.playCardHover();
+      soundEngine.playCardFlip();
       this.renderAll();
       return;
     }
 
+    if (drawRes.drawnCard) {
+      soundEngine.playCardFlip();
+    }
     await this.animateAndFinishPlayerDraw(drawRes, deckRect, fieldRects);
   }
 
   async handlePlayerSelectDrawTarget(fieldCardId, clientX, clientY) {
     if (this.isAnimating) return;
     this.isAnimating = true;
-    const revealEl = document.querySelector('#drawn-card-reveal');
-    const deckRect = revealEl
-      ? cardAnimator.getRect(revealEl)
-      : this.pendingDrawRect || cardAnimator.getRect('#draw-pile-stack');
-    const fieldRects = this.snapshotFieldRects();
+    try {
+      const revealEl = document.querySelector('#drawn-card-reveal');
+      const deckRect = revealEl
+        ? cardAnimator.getRect(revealEl)
+        : this.pendingDrawRect || cardAnimator.getRect('#draw-pile-stack');
+      const fieldRects = this.snapshotFieldRects();
 
-    const drawRes = this.engine.selectFieldForDrawnCard(fieldCardId);
-    await this.animateAndFinishPlayerDraw(drawRes, deckRect, fieldRects);
+      const drawRes = this.engine.selectFieldForDrawnCard(fieldCardId);
+      await this.animateAndFinishPlayerDraw(drawRes, deckRect, fieldRects);
+    } catch (err) {
+      this.recoverFromAnimationError(err, 'chọn lá ghép cho lá bốc');
+    }
   }
 
   async animateAndFinishPlayerDraw(drawRes, deckRect, fieldRects) {
@@ -1400,63 +2691,67 @@ class HanaKoiApp {
       this.pendingMpMoveAction.capturedDraw = drawRes.captured || [];
     }
 
-    if (drawRes.drawnCard) {
-      if (drawRes.captured && drawRes.captured.length > 0) {
-        this.renderCenterBoard();
-        const matchedCards = drawRes.captured.slice(1);
-        const targetRect = fieldRects[matchedCards[0]?.id];
-        const relocatedIds = (this.engine.lastFieldRelocations || []).map((r) => r.card.id);
-        const relocPromise = cardAnimator.animateFieldRelocations(fieldRects, {
-          delayMs: 220,
-          relocatedIds
-        });
+    await this.safeAnimate(async () => {
+      if (drawRes.drawnCard) {
+        if (drawRes.captured && drawRes.captured.length > 0) {
+          this.renderCenterBoard();
+          const matchedCards = drawRes.captured.slice(1);
+          const targetRect = fieldRects[matchedCards[0]?.id];
+          const relocatedIds = (this.engine.lastFieldRelocations || []).map((r) => r.card.id);
+          const relocPromise = cardAnimator.animateFieldRelocations(fieldRects, {
+            delayMs: 220,
+            relocatedIds
+          });
 
-        await Promise.all([
-          cardAnimator.animateCaptureSequence({
-            actor: 'player',
-            playedCard: drawRes.drawnCard,
-            matchedCards,
-            skinId,
-            fromRect: deckRect,
-            fieldTargetRect: targetRect,
-            onImpactSound: (gotBright) => {
-              soundEngine.playCardSnap(gotBright);
-              if (targetRect) {
-                this.particles.triggerBurst(
-                  targetRect.left + targetRect.width / 2,
-                  targetRect.top + targetRect.height / 2,
-                  gotBright ? '#ffd166' : '#06d6a0',
-                  gotBright ? 34 : 20
-                );
+          await Promise.all([
+            cardAnimator.animateCaptureSequence({
+              actor: 'player',
+              playedCard: drawRes.drawnCard,
+              matchedCards,
+              skinId,
+              fromRect: deckRect,
+              fieldTargetRect: targetRect,
+              onImpactSound: (gotBright) => {
+                soundEngine.playCardSnap(gotBright);
+                if (targetRect) {
+                  this.particles.triggerBurst(
+                    targetRect.left + targetRect.width / 2,
+                    targetRect.top + targetRect.height / 2,
+                    gotBright ? '#ffd166' : '#06d6a0',
+                    gotBright ? 34 : 20
+                  );
+                }
+                if (!this.activeTeasePopup) {
+                  this.triggerOpponentTeaseLine(gotBright);
+                }
               }
-              if (!this.activeTeasePopup) {
-                this.triggerOpponentTeaseLine(gotBright);
-              }
-            }
-          }),
-          relocPromise
-        ]);
-        this.renderRightPanel();
-      } else {
-        this.renderCenterBoard();
-        const shiftPromise = cardAnimator.animateFieldRelocations(fieldRects, {
-          delayMs: 0
-        });
-        await Promise.all([
-          cardAnimator.animateCardToFieldSlot({
-            card: drawRes.drawnCard,
-            skinId,
-            fromRect: deckRect,
-            toFieldCardId: drawRes.drawnCard.id,
-            onLandSound: () => soundEngine.playCardSnap(false)
-          }),
-          shiftPromise
-        ]);
+            }),
+            relocPromise
+          ]);
+          this.renderRightPanel();
+        } else {
+          this.renderCenterBoard();
+          const shiftPromise = cardAnimator.animateFieldRelocations(fieldRects, {
+            delayMs: 0
+          });
+          await Promise.all([
+            cardAnimator.animateCardToFieldSlot({
+              card: drawRes.drawnCard,
+              skinId,
+              fromRect: deckRect,
+              toFieldCardId: drawRes.drawnCard.id,
+              onLandSound: () => soundEngine.playCardSnap(false)
+            }),
+            shiftPromise
+          ]);
+        }
       }
-    }
+    });
 
     this.isAnimating = false;
-    this.afterPlayerDrawResolved(drawRes);
+    this.afterPlayerDrawResolved(drawRes).catch((err) =>
+      this.recoverFromAnimationError(err, 'kết thúc lượt của bạn')
+    );
   }
 
   async afterPlayerDrawResolved(drawRes) {
@@ -1464,8 +2759,7 @@ class HanaKoiApp {
     const isMp = this.isMultiplayerMatch();
 
     if (yCheck?.newYaku) {
-      soundEngine.playShobuVictory();
-      await this.showYakuReveal(yCheck, 'player');
+      await this.safeAnimate(() => this.showYakuReveal(yCheck, 'player'));
       this.triggerOpponentTeaseLine(true);
       if (yCheck.autoShobu) {
         this.handleRoundFinished(yCheck.outcome);
@@ -1513,7 +2807,10 @@ class HanaKoiApp {
         short: isAi,
         actorName: isAi ? this.currentOpponent?.name : '',
         skinId: this.saveData.equippedSkin,
-        durationMs: cardAnimator.scaleMs(isAi ? 2000 : 2800)
+        durationMs: cardAnimator.scaleMs(isAi ? 2000 : 2800),
+        onShow: (yaku) => {
+          soundEngine.playYakuKotoGlissando(yaku);
+        }
       });
     } finally {
       this.yakuRevealActive = false;
@@ -1522,41 +2819,73 @@ class HanaKoiApp {
 
   scheduleAiTurn() {
     if (this.isMultiplayerMatch()) return;
-    // Tạm dừng AI khi đang mở hướng dẫn / popup ăn bộ; closeTutorial() sẽ gọi lại
-    if (this.activeModal === 'tutorial' || this.yakuRevealActive) return;
-    setTimeout(async () => {
+    // Tạm dừng AI khi đang mở hướng dẫn / xem bài đã ăn / popup ăn bộ; đóng modal sẽ gọi lại
+    if (
+      this.activeModal === 'tutorial' ||
+      this.activeModal === 'captured_view' ||
+      this.yakuRevealActive
+    ) {
+      return;
+    }
+    const token = this._matchToken;
+    setTimeout(() => {
       if (
+        token !== this._matchToken ||
         this.engine.phase !== 'AI_TURN' ||
         this.isAnimating ||
         this.isMultiplayerMatch() ||
         this.activeModal === 'tutorial' ||
+        this.activeModal === 'captured_view' ||
         this.yakuRevealActive
       ) {
         return;
       }
-      this.isAnimating = true;
+      this.runAiTurn(token).catch((err) => {
+        // Lượt của trận/ván cũ lỗi thì bỏ, không đụng trận mới
+        if (token === this._matchToken) this.recoverFromAnimationError(err, 'lượt đối thủ');
+      });
+    }, cardAnimator.scaleMs(this.randomAiThinkMs()));
+  }
 
-      const opp = this.currentOpponent;
-      const skinId = this.saveData.equippedSkin;
-      const move = this.engine.computeBestAiMove(opp.aiProfile);
-      if (!move) {
-        this.isAnimating = false;
-        return;
-      }
+  /**
+   * Tăng mã trận/ván mỗi khi bắt đầu trận hoặc ván mới; lượt AI đang chạy dở
+   * của trận/ván cũ thấy mã đổi sẽ dừng, không sửa engine của trận mới.
+   */
+  bumpMatchToken() {
+    this._matchToken = (this._matchToken || 0) + 1;
+  }
 
-      const aiHandRect = cardAnimator.getRect('.ai-hand-zone .hana-card-3d:last-child');
-      const fieldRects1 = this.snapshotFieldRects();
+  /** Thân lượt AI: đánh 1 lá trên tay, bốc 1 lá, rồi xét bộ (Koi-Koi/Shōbu). */
+  async runAiTurn(token = this._matchToken) {
+    // Trận/ván đã đổi trong lúc lượt này chờ hiệu ứng → dừng
+    const stale = () => token !== this._matchToken;
+    if (stale()) return;
+    this.isAnimating = true;
 
-      const idx = this.engine.aiHand.findIndex((c) => c.id === move.handCard.id);
-      if (idx !== -1) this.engine.aiHand.splice(idx, 1);
+    const opp = this.currentOpponent;
+    const skinId = this.saveData.equippedSkin;
+    const move = this.engine.computeBestAiMove(opp.aiProfile);
+    if (!move) {
+      this.isAnimating = false;
+      return;
+    }
 
-      const matches = this.engine.getFieldMatches(move.handCard);
-      const capturedHand = this.engine.resolveCardPlacement(
-        'ai',
-        move.handCard,
-        matches,
-        move.fieldTarget?.id
-      );
+    const aiHandRect = cardAnimator.getRect('.ai-hand-zone .hana-card-3d:last-child');
+    const fieldRects1 = this.snapshotFieldRects();
+
+    const idx = this.engine.aiHand.findIndex((c) => c.id === move.handCard.id);
+    if (idx !== -1) this.engine.aiHand.splice(idx, 1);
+
+    const matches = this.engine.getFieldMatches(move.handCard);
+    const capturedHand = this.engine.resolveCardPlacement(
+      'ai',
+      move.handCard,
+      matches,
+      move.fieldTarget?.id
+    );
+
+    await this.safeAnimate(async () => {
+      soundEngine.playCardDeal(0.36);
 
       if (capturedHand.length > 0) {
         this.renderCenterBoard();
@@ -1605,14 +2934,18 @@ class HanaKoiApp {
           shiftPromise1
         ]);
       }
+    });
+    if (stale()) return;
 
-      if (this.engine.deck.length > 0) {
-        const deckRect = cardAnimator.getRect('#draw-pile-stack');
-        const fieldRects2 = this.snapshotFieldRects();
-        const drawn = this.engine.deck.shift();
-        const drawMatches = this.engine.getFieldMatches(drawn);
-        const capturedDraw = this.engine.resolveCardPlacement('ai', drawn, drawMatches);
+    if (this.engine.deck.length > 0) {
+      soundEngine.playCardFlip();
+      const deckRect = cardAnimator.getRect('#draw-pile-stack');
+      const fieldRects2 = this.snapshotFieldRects();
+      const drawn = this.engine.deck.shift();
+      const drawMatches = this.engine.getFieldMatches(drawn);
+      const capturedDraw = this.engine.resolveCardPlacement('ai', drawn, drawMatches);
 
+      await this.safeAnimate(async () => {
         if (capturedDraw.length > 0) {
           this.renderCenterBoard();
           const matchedDrawCards = capturedDraw.slice(1);
@@ -1658,61 +2991,126 @@ class HanaKoiApp {
             shiftPromise2
           ]);
         }
-      }
+      });
+      if (stale()) return;
+    }
 
+    this.isAnimating = false;
+    const yakuCheck = this.engine.checkPostTurnYaku('ai');
+    if (yakuCheck.newYaku) {
+      this.isAnimating = true;
+      await this.safeAnimate(() => this.showYakuReveal(yakuCheck, 'ai'));
+      if (stale()) return;
       this.isAnimating = false;
-      const yakuCheck = this.engine.checkPostTurnYaku('ai');
-      if (yakuCheck.newYaku) {
-        this.isAnimating = true;
-        await this.showYakuReveal(yakuCheck, 'ai');
-        this.isAnimating = false;
-        const wantKoiKoi = this.engine.shouldAiCallKoiKoi(
-          opp.aiProfile,
-          yakuCheck.evalResult
+      const wantKoiKoi = this.engine.shouldAiCallKoiKoi(
+        opp.aiProfile,
+        yakuCheck.evalResult
+      );
+      if (wantKoiKoi) {
+        this.currentDialogue = this.pickRandom(opp.dialogues.callKoiKoi);
+        this.engine.declareKoiKoi('ai');
+        this.triggerAnimeCutin(
+          opp.name,
+          opp.avatar,
+          'KOI-KOI! (こいこい)',
+          `${opp.name} tuyên bố cược tiếp để nhân đôi điểm!`,
+          opp.koikoiArt || opp.portrait,
+          opp.koikoiScale,
+          opp.koikoiDrop
         );
-        if (wantKoiKoi) {
-          this.currentDialogue = this.pickRandom(opp.dialogues.callKoiKoi);
-          this.engine.declareKoiKoi('ai');
-          this.triggerAnimeCutin(
-            opp.name,
-            opp.avatar,
-            'KOI-KOI! (こいこい)',
-            `${opp.name} tuyên bố cược tiếp để nhân đôi điểm!`,
-            opp.portrait
-          );
-          this.renderAll();
-          return;
-        } else {
-          const outcome = this.engine.declareShobu('ai', yakuCheck.evalResult);
-          this.handleRoundFinished(outcome);
-          return;
-        }
-      }
-
-      if (yakuCheck.roundDraw) {
-        this.handleRoundFinished(yakuCheck.outcome);
+        this.renderAll();
+        return;
+      } else {
+        const outcome = this.engine.declareShobu('ai', yakuCheck.evalResult);
+        this.handleRoundFinished(outcome);
         return;
       }
+    }
 
+    if (yakuCheck.roundDraw) {
+      this.handleRoundFinished(yakuCheck.outcome);
+      return;
+    }
+
+    this.renderAll();
+  }
+
+  /**
+   * Chạy 1 đoạn hiệu ứng (render + bay lá). Lỗi chỉ ghi console rồi bỏ qua,
+   * để phần luật phía sau (bốc bài, xét bộ, chuyển lượt) vẫn chạy tiếp.
+   */
+  async safeAnimate(fn) {
+    try {
+      await fn();
+    } catch (err) {
+      console.error('[HoaKoi] Hiệu ứng lỗi, bỏ qua để trận đi tiếp:', err);
+    }
+  }
+
+  /**
+   * Lưới an toàn khi một luồng có bật isAnimating ném lỗi giữa chừng:
+   * gỡ khoá, vẽ lại bàn rồi đi tiếp theo phase hiện tại của engine.
+   */
+  recoverFromAnimationError(err, where) {
+    console.error(`[HoaKoi] Lỗi trong ${where}, tự gỡ khoá bàn:`, err);
+    this.isAnimating = false;
+    this.yakuRevealActive = false;
+    try {
       this.renderAll();
-    }, cardAnimator.scaleMs(350));
+    } catch (renderErr) {
+      console.error('[HoaKoi] renderAll lỗi khi gỡ khoá:', renderErr);
+    }
+
+    // Chặn vòng lặp nếu lỗi lặp lại liên tục: tối đa 3 lần tự đi tiếp trong 5 giây
+    const now = Date.now();
+    if (!this._animRecovery || now - this._animRecovery.since > 5000) {
+      this._animRecovery = { since: now, count: 0 };
+    }
+    if (++this._animRecovery.count > 3) return;
+
+    const phase = this.engine.phase;
+    if (phase === 'PLAYER_DRAWING') {
+      // Đã đánh lá trên tay nhưng chưa bốc: bốc tiếp
+      this.isAnimating = true;
+      this.executePlayerDrawStep().catch((e) =>
+        this.recoverFromAnimationError(e, 'bốc bài của bạn')
+      );
+    } else if (phase === 'AI_TURN') {
+      if (this.isMultiplayerMatch()) {
+        // Lượt mình đã xong nhưng chưa kịp gửi cho đối thủ
+        if (this.pendingMpMoveAction) {
+          const canonical = this.engine.exportCanonicalState(multiplayerService.role, null);
+          multiplayerService.syncRoomState(canonical, this.pendingMpMoveAction);
+          this.pendingMpMoveAction = null;
+        }
+      } else {
+        this.scheduleAiTurn();
+      }
+    }
+    // PLAYER_HAND / chọn lá / Koi-Koi / hết ván: renderAll() ở trên đã hiện đúng giao diện
+  }
+
+  // Khoảng nghỉ "đối thủ đang nghĩ" trước mỗi lượt AI, ngẫu nhiên nhẹ cho tự nhiên
+  randomAiThinkMs() {
+    return 650 + Math.round(Math.random() * 600);
   }
 
   /**
    * portraitUrl (tuỳ chọn): ảnh chân dung tách nền (cutout/*.webp) → bản cut-in lớn,
    * nhân vật trồi khỏi dải đỏ; tiêu đề tách phần "(こいこい)" xuống dòng riêng.
    * Không có portraitUrl → giữ bản avatar tròn.
+   * portraitScale / portraitDrop (tuỳ chọn): phóng to / hạ thấp riêng nhân vật (koikoiScale / koikoiDrop trong charactersData).
    */
-  triggerAnimeCutin(name, avatarUrl, mainTitle, subText, portraitUrl = '') {
+  triggerAnimeCutin(name, avatarUrl, mainTitle, subText, portraitUrl = '', portraitScale = 1, portraitDrop = 0) {
     soundEngine.playKoiKoiFanfare();
     const root = document.getElementById('cutin-root');
     if (portraitUrl) {
       const [, latin = mainTitle, jp = ''] = mainTitle.match(/^(.*?)\s*(\(.+\))$/) || [];
       setElementMarkup(root, `
-        <div class="cutin-overlay">
+        <div class="cutin-overlay is-opponent" title="Chạm để đóng">
           <div class="cutin-band has-portrait">
             <div class="cutin-portrait-clip">
-              <img src="${portraitUrl}" class="cutin-portrait" alt="${name}" draggable="false" />
+              <img src="${portraitUrl}" class="cutin-portrait" alt="${name}" draggable="false" style="--kk-scale: ${portraitScale || 1}; --kk-drop: ${portraitDrop || 0}" />
             </div>
             <div class="cutin-text-group">
               <h2>${latin}${jp ? ` <span class="kk-jp" lang="ja">${jp}</span>` : ''}</h2>
@@ -1734,9 +3132,22 @@ class HanaKoiApp {
         </div>
       `);
     }
-    setTimeout(() => {
+    // Lá bài đang bay nằm ở lớp trên body (trên cả #app) → ẩn tạm để không đè lên cut-in
+    document.body.classList.add('hk-cutin-open');
+    clearTimeout(this.cutinTimer);
+    const closeCutin = () => {
+      clearTimeout(this.cutinTimer);
       root.replaceChildren();
-    }, 1900);
+      document.body.classList.remove('hk-cutin-open');
+    };
+    // Cut-in đối thủ (có chân dung): nền tối, hiện lâu hơn, chạm bất kỳ đâu để đóng ngay
+    if (portraitUrl) {
+      root.querySelector('.cutin-overlay').addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeCutin();
+      });
+    }
+    this.cutinTimer = setTimeout(closeCutin, portraitUrl ? 3000 : 1900);
   }
 
   handleRoundFinished(outcome, fromRemoteSync = false) {
@@ -1811,6 +3222,14 @@ class HanaKoiApp {
     this.persistSave();
     this.activeModal = 'round_end';
     this.renderAll();
+
+    // Tiếng đồng xu Koban leng keng khi bảng tổng kết hiệp trao Xu Hoa
+    const coinChimeCount = outcome.matchBonusCoins ? 6 : outcome.winner === 'player' ? 5 : 3;
+    setTimeout(() => {
+      if (this.activeModal === 'round_end') {
+        soundEngine.playCoinReward(coinChimeCount);
+      }
+    }, 340);
   }
 
   // ==========================================================================
@@ -1818,10 +3237,11 @@ class HanaKoiApp {
   // ==========================================================================
 
   updateModalMarkup(root, modalKey, markup) {
-    const existingWindow = root.querySelector('.modal-window');
+    const existingWindow = root.querySelector('.modal-window, .hk-capv');
     if (root.dataset.activeModalKey === modalKey && existingWindow) {
       const oldBody = existingWindow.querySelector('.modal-body');
       const oldScrollTop = oldBody ? oldBody.scrollTop : 0;
+      const oldCapvScroll = existingWindow.classList.contains('hk-capv') ? existingWindow.scrollTop : 0;
       const oldCompGrid = existingWindow.querySelector('.compendium-48-grid');
       const oldCompScroll = oldCompGrid ? oldCompGrid.scrollTop : 0;
       const prevTab = existingWindow.dataset.colTab || '';
@@ -1830,7 +3250,7 @@ class HanaKoiApp {
       const range = document.createRange();
       range.selectNodeContents(existingWindow);
       const frag = range.createContextualFragment(markup);
-      const nextWindow = frag.querySelector('.modal-window');
+      const nextWindow = frag.querySelector('.modal-window, .hk-capv');
       if (nextWindow) {
         if (modalKey === 'collection' && prevTab === nextTab) {
           const oldPreviews = existingWindow.querySelectorAll('.collection-grid .preview-card-holder');
@@ -1839,12 +3259,16 @@ class HanaKoiApp {
             newPreviews.forEach((np, idx) => np.replaceWith(oldPreviews[idx]));
           }
         }
+        existingWindow.className = nextWindow.className;
         existingWindow.replaceChildren(...nextWindow.childNodes);
         existingWindow.onclick = (e) => e.stopPropagation();
         existingWindow.dataset.colTab = nextTab;
         const newBody = existingWindow.querySelector('.modal-body');
         if (newBody && prevTab === nextTab) {
           newBody.scrollTop = oldScrollTop;
+        }
+        if (existingWindow.classList.contains('hk-capv')) {
+          existingWindow.scrollTop = oldCapvScroll;
         }
         const newCompGrid = existingWindow.querySelector('.compendium-48-grid');
         if (newCompGrid && prevTab === nextTab) {
@@ -1856,7 +3280,7 @@ class HanaKoiApp {
 
     root.dataset.activeModalKey = modalKey;
     setElementMarkup(root, markup);
-    const win = root.querySelector('.modal-window');
+    const win = root.querySelector('.modal-window, .hk-capv');
     if (win) {
       win.onclick = (e) => e.stopPropagation();
       if (modalKey === 'collection') {
@@ -1867,6 +3291,13 @@ class HanaKoiApp {
 
   renderActiveModal() {
     const root = document.getElementById('modal-root');
+    // Panel bài đã ăn: ẩn lớp cánh hoa rơi + lớp lá bài bay/ghép cặp (nằm trên #app) để không bay đè lên panel
+    const isCapvOpen =
+      this.activeModal === 'captured_view' && this.engine.phase !== 'PLAYER_KOIKOI_DECISION';
+    document.body.classList.toggle('hk-capv-open', isCapvOpen);
+    if (isCapvOpen) {
+      cardAnimator.clearAllFloaters();
+    }
 
     if (this.engine.phase === 'PLAYER_KOIKOI_DECISION') {
       // Chờ popup ăn bộ diễn xong rồi mới mở bảng Koi-Koi/Shōbu
@@ -1880,6 +3311,7 @@ class HanaKoiApp {
       if (root.dataset.activeModalKey === 'koikoi_decision' && this.koikoiModalMarkup === markup && root.firstElementChild) {
         return;
       }
+      if (root.dataset.activeModalKey !== 'koikoi_decision') soundEngine.playScrollOpen();
       this.koikoiModalMarkup = markup;
       this.updateModalMarkup(root, 'koikoi_decision', markup);
       this.bindKoiKoiDecisionEvents(root);
@@ -1936,52 +3368,168 @@ class HanaKoiApp {
         this.updateModalMarkup(root, 'tutorial', this.buildTutorialModalHTML());
         this.bindTutorialModalEvents(root);
         break;
+      case 'captured_view':
+        this.updateModalMarkup(root, 'captured_view', this.buildCapturedViewModalHTML());
+        this.bindCapturedViewModalEvents(root);
+        break;
+      case 'card_inspect':
+        this.updateModalMarkup(root, 'card_inspect', this.buildCardInspectModalHTML());
+        this.bindCardInspectModalEvents(root);
+        break;
       default:
         delete root.dataset.activeModalKey;
         root.replaceChildren();
     }
   }
 
-  /**
-   * Khung cuộn giấy Makimono dùng chung cho bảng Koi-Koi/Shōbu và bảng kết quả hiệp.
-   * Ảnh element nằm ở public/assets/koikoi_scroll/, CSS ở nhóm .kk-* trong main.css.
-   */
-  buildScrollModalHTML({ ariaLabel, extraClass = '', contentHtml }) {
-    // Cánh hoa rơi: vị trí cố định theo chỉ số để markup không đổi giữa các lần render
-    const petalColors = ['#ffb7c5', '#f6a3b4', '#e9798f', '#ffd1dc'];
-    const petalsHtml = Array.from({ length: 9 }, (_, i) => {
-      const style = [
-        `left:${(7 + ((i * 37) % 88)).toFixed(0)}%`,
-        `--pc:${petalColors[i % petalColors.length]}`,
-        `--pd:${(1.1 + ((i * 0.83) % 4.2)).toFixed(2)}s`,
-        `--pl:${(6 + ((i * 1.7) % 4)).toFixed(1)}s`,
-        `--sx:${(((i * 53) % 120) - 60).toFixed(0)}px`,
-        `--ps:${(0.7 + ((i * 0.29) % 0.6)).toFixed(2)}`
-      ].join(';');
-      return `<span class="kk-petal" style="${style}"></span>`;
-    }).join('');
+  // Panel "Bài đã ăn" (mobile): bộ đã thành, bộ sắp thành, 4 hàng Quang/Thú/Dải/Thường
+  buildCapturedViewModalHTML() {
+    const isOpp = this.capturedViewSide === 'ai';
+    const myCards = isOpp ? this.engine.aiCaptured : this.engine.playerCaptured;
+    const oppCards = isOpp ? this.engine.playerCaptured : this.engine.aiCaptured;
+    const skinId = this.saveData.equippedSkin;
+    const summary = this.getCompactYakuSummary(myCards, oppCards, isOpp);
+    const inYaku = new Set();
+    summary.completed.forEach((y) => (y.cards || []).forEach((id) => inYaku.add(id)));
+    const who = isOpp ? this.getOpponentDisplayName() : 'Bạn';
+    const pills = [
+      ...summary.completed.map((y) => `<span class="hk-capv-pill done">✓ ${y.viName} · ${y.points} điểm</span>`),
+      ...summary.candidates.map((c) => `<span class="hk-capv-pill prog">✦ ${c.shortName} ${c.owned}/${c.need}</span>`)
+    ];
+    const rows = [
+      { label: 'Quang', type: 'hikari' },
+      { label: 'Thú', type: 'tane' },
+      { label: 'Dải', type: 'tanzaku' },
+      { label: 'Thường', type: 'kasu' }
+    ].map((g) => {
+      const list = myCards.filter((c) => c.type === g.type);
+      const cards = list.length
+        ? list
+            .map(
+              (c) => `<div class="hk-capv-card${inYaku.has(c.id) ? ' in-yaku' : ''}" title="${c.viName}">${renderCardFaceSVG(c, skinId, false)}</div>`
+            )
+            .join('')
+        : '<span class="hk-capv-empty">Chưa có</span>';
+      return `<div class="hk-capv-row"><div class="hk-capv-label">${g.label}<b>${list.length} lá</b></div><div class="hk-capv-cards">${cards}</div></div>`;
+    });
 
     return `
-      <div class="modal-backdrop kk-backdrop ${extraClass}">
-        <svg class="kk-defs" width="0" height="0" aria-hidden="true" focusable="false">
-          <filter id="kk-ink-bleed" x="-20%" y="-30%" width="140%" height="160%">
-            <!-- Chỉ quầng mực loang mềm, không dùng feDisplacementMap (làm chữ bị răng cưa) -->
-            <feGaussianBlur in="SourceGraphic" stdDeviation="2.4" result="blur" />
-            <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.45 0" result="halo" />
-            <feMerge><feMergeNode in="halo" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-        </svg>
-        <div class="kk-scroll" role="dialog" aria-label="${ariaLabel}">
-          <div class="kk-roller is-left" aria-hidden="true"></div>
-          <div class="kk-sheet">
-            <div class="kk-paper" aria-hidden="true"></div>
-            <div class="kk-decor-branch" aria-hidden="true"></div>
-            <div class="kk-decor-ink" aria-hidden="true"></div>
-            <div class="kk-petals" aria-hidden="true">${petalsHtml}</div>
-            <div class="kk-content">${contentHtml}</div>
-            <div class="kk-seal" aria-hidden="true"></div>
+      <div class="hk-capv-backdrop" id="hk-capv-backdrop">
+        <div class="hk-capv ${isOpp ? 'is-opp' : 'is-player'}" role="dialog" aria-label="${who} đã ăn">
+          <div class="hk-capv-head">
+            <h3>${who} đã ăn<small>· ${myCards.length} lá</small></h3>
+            <button class="hk-capv-close" id="btn-close-modal" aria-label="Đóng">✕</button>
           </div>
-          <div class="kk-roller is-right" aria-hidden="true"></div>
+          <div class="hk-capv-yaku">${pills.length ? pills.join('') : '<span class="hk-capv-pill muted">Chưa có bộ nào</span>'}</div>
+          ${rows.join('')}
+        </div>
+      </div>`;
+  }
+
+  bindCapturedViewModalEvents(root) {
+    const close = () => {
+      this.activeModal = null;
+      this.renderActiveModal();
+      if (this.engine.phase === 'AI_TURN') {
+        this.scheduleAiTurn();
+      }
+    };
+    root.querySelector('#btn-close-modal').onclick = close;
+    root.querySelector('#hk-capv-backdrop').onclick = (e) => {
+      if (e.target === e.currentTarget) close();
+    };
+  }
+
+  buildCardInspectModalHTML() {
+    const inspected = getCardById(this.inspectedCardId) || HANAFUDA_CARDS[0];
+    const mInfo = getMonthInfo(inspected.month);
+    const typeLabel =
+      {
+        hikari: 'Quang (20đ)',
+        tane: 'Thú (10đ)',
+        tanzaku: 'Dải Thơ (5đ)',
+        kasu: 'Thường (1đ)'
+      }[inspected.type] || `${inspected.points}đ`;
+
+    return `
+      <div class="modal-backdrop" id="modal-backdrop-close">
+        <div class="modal-window card-inspect-modal-window">
+          <div class="modal-header">
+            <h2>🔍 Soi Lá Bài 3D · #${inspected.id} ${inspected.viName}</h2>
+            <button class="close-modal-btn" id="btn-close-modal">✕</button>
+          </div>
+          <div class="modal-body card-inspect-body">
+            <div class="card-inspect-left">
+              <div class="inspector-flippable-card ${this.inspectorFlipped ? 'flipped' : ''}" id="inspector-3d-card">
+                <div class="inspector-face front">
+                  ${renderCardFaceSVG(inspected, this.saveData.equippedSkin, true, { size: 'lg' })}
+                </div>
+                <div class="inspector-face back">
+                  ${renderCardBackSVG(this.saveData.equippedBack, { size: 'lg' })}
+                </div>
+              </div>
+            </div>
+            <div class="card-inspect-right">
+              <div class="card-inspect-badges">
+                <span class="hk-live-pill done">${mInfo.viName} · ${inspected.kanji}</span>
+                <span class="hk-live-pill prog">${typeLabel}</span>
+              </div>
+              <h3 class="card-inspect-title">${inspected.viName} <small>(${inspected.jpName})</small></h3>
+              <p class="card-inspect-lore">${inspected.lore}</p>
+              <div class="card-inspect-symbolism">
+                <strong>🌸 ${mInfo.flower}:</strong> ${mInfo.symbolism}
+              </div>
+              <div class="card-inspect-actions">
+                <button class="nav-btn" id="btn-flip-inspector">🔄 Lật Mặt Trước / Lưng 3D</button>
+                <button class="nav-btn primary-gold" id="btn-open-full-compendium">🎴 Mở Trưng Bày 48 Lá</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  bindCardInspectModalEvents(root) {
+    this.bindCompendiumInspectorFlipEvents(root);
+    const closeBtn = root.querySelector('#btn-close-modal');
+    if (closeBtn) {
+      closeBtn.onclick = () => {
+        this.activeModal = null;
+        this.renderActiveModal();
+      };
+    }
+    const fullBtn = root.querySelector('#btn-open-full-compendium');
+    if (fullBtn) {
+      fullBtn.onclick = () => {
+        this.collectionTab = 'compendium';
+        this.activeModal = 'collection';
+        this.renderActiveModal();
+      };
+    }
+    const backdrop = root.querySelector('#modal-backdrop-close');
+    if (backdrop) {
+      backdrop.onclick = (e) => {
+        if (e.target !== e.currentTarget) return;
+        this.activeModal = null;
+        this.renderActiveModal();
+      };
+    }
+  }
+
+  /**
+   * Khung "Bàn Chiếu" dùng chung cho bảng Koi-Koi/Shōbu và bảng kết quả hiệp:
+   * khung sơn mài + nền chiếu cói + 2 mép viền gấm, tiêu đề trên bảng sơn mài. CSS ở nhóm .tt-* / .tt-kk trong main.css.
+   */
+  buildScrollModalHTML({ ariaLabel, extraClass = '', kicker = '', title, bodyHtml }) {
+    return `
+      <div class="modal-backdrop kk-backdrop ${extraClass}">
+        <div class="tt-panel tt-kk" role="dialog" aria-label="${ariaLabel.replace(/<[^>]*>/g, '')}">
+          <div class="tt-head is-center">
+            ${kicker ? `<span class="tt-kicker">${kicker}</span>` : ''}
+            <h2 class="tt-title">${title}</h2>
+          </div>
+          <div class="tt-body">${bodyHtml}</div>
         </div>
       </div>
     `;
@@ -2013,19 +3561,20 @@ class HanaKoiApp {
 
     return this.buildScrollModalHTML({
       ariaLabel: 'Quyết Định Định Mệnh',
-      contentHtml: `
-        <h2 class="kk-title">Quyết Định Định Mệnh</h2>
-        ${this.buildYakuLinesHTML(evalRes.yakus)}
-        <div class="kk-divider" aria-hidden="true"></div>
-        <div class="kk-total">
-          Tổng Điểm Nếu Dừng (Shōbu): <strong>${totalNow} Điểm</strong>${mult > 1 ? ` <em>(Nhân ×${mult}!)</em>` : ''}
+      title: 'Quyết Định Định Mệnh',
+      bodyHtml: `
+        <div class="tt-card kk-card">
+          ${this.buildYakuLinesHTML(evalRes.yakus)}
+          <div class="kk-total">
+            Tổng Điểm Nếu Dừng (Shōbu): <strong>${totalNow} Điểm</strong>${mult > 1 ? ` <em>(Nhân ×${mult}!)</em>` : ''}
+          </div>
         </div>
         <div class="kk-actions">
-          <button class="kk-stroke-btn is-indigo" id="btn-choose-shobu">
+          <button class="tt-dbtn is-dark" id="btn-choose-shobu">
             <span class="kk-btn-main">SHŌBU! <span lang="ja">(勝負)</span></span>
             <span class="kk-btn-sub">Dừng &amp; Ăn ${totalNow} Điểm</span>
           </button>
-          <button class="kk-stroke-btn is-vermilion is-glow" id="btn-choose-koikoi">
+          <button class="tt-dbtn is-red is-glow" id="btn-choose-koikoi">
             <span class="kk-btn-main">KOI-KOI! <span lang="ja">(こいこい)</span></span>
             <span class="kk-btn-sub">Cược Tiếp Săn Điểm Lớn</span>
           </button>
@@ -2035,10 +3584,13 @@ class HanaKoiApp {
 
   bindKoiKoiDecisionEvents(root) {
     root.querySelector('#btn-choose-shobu').onclick = () => {
+      // Chạm 2 lần nhanh không được cộng điểm 2 lần
+      if (this.engine.phase !== 'PLAYER_KOIKOI_DECISION') return;
       const outcome = this.engine.declareShobu('player');
       this.handleRoundFinished(outcome);
     };
     root.querySelector('#btn-choose-koikoi').onclick = () => {
+      if (this.engine.phase !== 'PLAYER_KOIKOI_DECISION') return;
       this.currentDialogue = this.pickRandom(
         this.currentOpponent.dialogues.playerCallKoiKoi
       );
@@ -2104,6 +3656,9 @@ class HanaKoiApp {
           </div>`
         : '';
 
+    // PvP: chỉ chủ phòng chia bài; khách đã bấm thì khoá nút và hiện đang chờ
+    const waitHost = this.isGuestWaitingHost();
+    const waitAttr = waitHost ? ' disabled aria-busy="true"' : '';
     const actionsHtml = isMatchEnd
       ? `<div class="kk-match-result ${playerWonMatch ? 'is-win' : 'is-lose'}">
           ${
@@ -2113,35 +3668,35 @@ class HanaKoiApp {
           }
         </div>
         <div class="kk-actions">
-          <button class="kk-stroke-btn is-vermilion is-glow" id="btn-play-again">
+          <button class="tt-dbtn is-red is-glow" id="btn-play-again"${waitAttr}>
             <span class="kk-btn-main">Tái Đấu</span>
-            <span class="kk-btn-sub">Đấu lại với ${oppShortName}</span>
+            <span class="kk-btn-sub">${waitHost ? 'Đang chờ chủ phòng…' : `Đấu lại với ${oppShortName}`}</span>
           </button>
-          <button class="kk-stroke-btn is-indigo" id="btn-pick-new-opp">
+          <button class="tt-dbtn is-dark" id="btn-pick-new-opp">
             <span class="kk-btn-main">Đổi Đối Thủ</span>
             <span class="kk-btn-sub">Chọn chế độ / đối thủ khác</span>
           </button>
         </div>`
       : `<div class="kk-actions is-single">
-          <button class="kk-stroke-btn is-vermilion is-glow" id="btn-next-round">
+          <button class="tt-dbtn is-red is-glow" id="btn-next-round"${waitAttr}>
             <span class="kk-btn-main">Sang ${nextMonthLabel}</span>
+            ${waitHost ? '<span class="kk-btn-sub">Đang chờ chủ phòng…</span>' : ''}
           </button>
         </div>`;
 
     return this.buildScrollModalHTML({
       ariaLabel: `Tháng ${monthOf(s.round)} – ${headline}`,
       extraClass: 'is-round-end',
-      contentHtml: `
-        <div class="kk-kicker">Tháng ${monthOf(s.round)}</div>
-        <h2 class="kk-title">${headline}</h2>
-        ${yakuHtml}
-        <div class="kk-divider" aria-hidden="true"></div>
+      kicker: `Tháng ${monthOf(s.round)}`,
+      title: headline,
+      bodyHtml: `
+        <div class="tt-card kk-card">${yakuHtml}</div>
         <div class="kk-scores">
           <div class="kk-score">
             <span class="kk-score-label">Tổng Điểm Bạn</span>
             <span class="kk-score-num">${this.engine.playerScore}</span>
           </div>
-          <span class="kk-score-vs" aria-hidden="true">—</span>
+          <span class="kk-score-vs" aria-hidden="true">VS</span>
           <div class="kk-score">
             <span class="kk-score-label">Tổng Điểm ${oppShortName}</span>
             <span class="kk-score-num">${this.engine.aiScore}</span>
@@ -2160,30 +3715,42 @@ class HanaKoiApp {
     const nextBtn = root.querySelector('#btn-next-round');
     if (nextBtn) {
       nextBtn.onclick = () => {
+        // Chạm 2 lần nhanh không được nhảy qua 2 ván
+        if (this.engine.phase !== 'ROUND_OVER') return;
+        // PvP: chỉ chủ phòng chia bài, khách chờ nhận NEXT_ROUND qua onStateReceived
+        if (this.waitForHostDeal()) return;
         this.activeModal = null;
+        this.bumpMatchToken();
         this.engine.nextRound();
         if (this.isMultiplayerMatch()) {
           const canonical = this.engine.exportCanonicalState(multiplayerService.role, null);
           multiplayerService.syncRoomState(canonical, { type: 'NEXT_ROUND' });
-          this.renderAll();
-          return;
         }
         this.renderAll();
-        if (this.engine.phase === 'AI_TURN') {
-          this.scheduleAiTurn();
-        }
+        this.runRoundOpeningSequence();
       };
     }
     const againBtn = root.querySelector('#btn-play-again');
     if (againBtn) {
       againBtn.onclick = () => {
         if (this.isMultiplayerMatch()) {
+          if (this.activeModal !== 'round_end' || this.waitForHostDeal()) return;
           this.activeModal = null;
           this.rollNewTableFlowerMonth();
+          this.bumpMatchToken();
           this.engine.startNewMatch(this.engine.totalRounds);
           const canonical = this.engine.exportCanonicalState(multiplayerService.role, null);
-          multiplayerService.syncRoomState(canonical, { type: 'REMATCH' });
-          this.renderAll();
+          // Server tự chia lại bộ bài khi nhận REMATCH → chủ phòng dùng đúng bộ đó để hai máy khớp nhau
+          multiplayerService
+            .syncRoomState(canonical, { type: 'REMATCH' })
+            .then((serverState) => {
+              if (serverState) this.engine.importCanonicalState(serverState, 'host');
+            })
+            .catch(() => {})
+            .finally(() => {
+              this.renderAll();
+              this.runRoundOpeningSequence();
+            });
         } else {
           this.startMatchWithOpponent(this.currentOpponent.id, this.engine.totalRounds);
         }
@@ -2209,69 +3776,53 @@ class HanaKoiApp {
 
     return `
       <div class="modal-backdrop" id="modal-backdrop-close">
-        <div class="modal-window" style="width:min(860px, calc(95 * var(--avw, 1vw)));">
-          <div class="modal-header">
-            <h2>⚔️ Ghép Trận Người Thật Trực Tuyến (PvP Online)</h2>
+        <div class="modal-window tt-panel tt-mp" style="width:min(860px, calc(95 * var(--avw, 1vw)));">
+          <div class="modal-header tt-head">
+            <h2 class="tt-title">⚔️ Ghép Trận <small>Người Thật Trực Tuyến (PvP Online)</small></h2>
             <button class="close-modal-btn" id="btn-close-modal">✕</button>
           </div>
           <div class="modal-body">
-            <div class="arena-hero-banner">
+            <div class="tt-hero">
               <img src="./public/assets/pvp_arena_banner.webp?v=2" alt="PvP Online Banner" />
-              <div class="arena-hero-overlay">
+              <div class="tt-hero-text">
                 <h3>⚔️ Đấu Trường Hoa Bài Trực Tuyến (PvP Online)</h3>
                 <p>Hệ thống tự động ghép cặp 2 người chơi đang tìm trận theo thời gian thực qua Server Database & kênh đồng bộ đa Tab tốc độ cao.</p>
               </div>
             </div>
 
-            <div class="mp-panel-card" style="text-align:center; align-items:center;">
-              <div style="width:100%; max-width:440px; text-align:left;">
-                <label style="font-size:12px; font-weight:800; display:block; margin-bottom:5px;">
-                  👤 Tên Kỳ Thủ Của Bạn Ở Tab Này:
-                </label>
-                <input type="text" class="mp-input" id="input-pvp-name" value="${multiplayerService.playerName}" placeholder="Nhập tên hiển thị..." />
-              </div>
+            <div class="tt-card tt-form">
+              <label class="tt-label" for="input-pvp-name">👤 Tên Kỳ Thủ Của Bạn Ở Tab Này:</label>
+              <input type="text" class="tt-input" id="input-pvp-name" value="${multiplayerService.playerName}" placeholder="Nhập tên hiển thị..." />
 
               ${
                 isPlaying
                   ? `
-                <div class="room-code-showcase" style="width:100%; max-width:540px;">
-                  <div style="font-size:13px; font-weight:800; color:var(--jade);">
-                    🟢 ĐANG ĐẤU TRỰC TIẾP VỚI: ${multiplayerService.opponentName}
-                  </div>
-                  <div class="room-code-digits">#${multiplayerService.roomCode}</div>
-                  <p style="font-size:12.5px; color:var(--text-muted);">
-                    Bạn đang ở trong trận PvP trực tuyến. Đóng cửa sổ này để tiếp tục đánh bài!
-                  </p>
+                <div class="tt-code">
+                  <small>🟢 ĐANG ĐẤU TRỰC TIẾP VỚI: ${multiplayerService.opponentName}</small>
+                  ${this.buildRoomCodeTilesHTML(`#${multiplayerService.roomCode}`)}
+                  <p>Bạn đang ở trong trận PvP trực tuyến. Đóng cửa sổ này để tiếp tục đánh bài!</p>
                 </div>
               `
                   : isSearching
                   ? `
-                <div class="room-code-showcase" style="width:100%; max-width:580px;">
-                  <div style="font-size:16px; font-weight:900; color:#c91e29; margin-bottom:6px;">
-                    🔍 Đang tìm kiếm đối thủ trực tuyến...
-                  </div>
-                  <p style="font-size:12.5px; color:var(--text-muted); line-height:1.5; margin-bottom:12px;">
-                    Hãy mở thêm <strong>1 Tab trình duyệt nữa</strong> và bấm <strong>Ghép Trận (PvP)</strong>, hoặc bấm nút <strong>Mở Tab Thứ 2 Ghép Trận Ngay</strong> bên dưới để 2 tab tự động bắt cặp!
-                  </p>
-                  <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-                    <button class="decision-big-btn shobu" id="btn-open-tab2-pvp" style="padding:10px 18px; font-size:13px;">
-                      🗗 Mở Tab Thứ 2 & Tự Động Ghép Trận Ngay
-                    </button>
-                    <button class="nav-btn" id="btn-cancel-pvp" style="padding:10px 18px;">
-                      ✕ Hủy Tìm Trận
-                    </button>
-                  </div>
+                <div class="tt-search"><span class="tt-search-dot" aria-hidden="true"></span>🔍 Đang tìm kiếm đối thủ trực tuyến...</div>
+                <p class="tt-help">
+                  Hãy mở thêm <strong>1 Tab trình duyệt nữa</strong> và bấm <strong>Ghép Trận (PvP)</strong>, hoặc bấm nút <strong>Mở Tab Thứ 2 Ghép Trận Ngay</strong> bên dưới để 2 tab tự động bắt cặp!
+                </p>
+                <div class="tt-btn-row">
+                  <button class="tt-bigbtn is-dark" id="btn-open-tab2-pvp">🗗 Mở Tab Thứ 2 & Tự Động Ghép Trận Ngay</button>
+                  <button class="tt-bigbtn is-washi" id="btn-cancel-pvp">✕ Hủy Tìm Trận</button>
                 </div>
               `
                   : `
-                <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:6px;">
-                  <button class="decision-big-btn koikoi" id="btn-start-pvp" style="min-width:250px;">
-                    ⚔️ Bắt Đầu Tìm Đối Thủ (PvP)<br/>
-                    <span style="font-size:11.5px; font-weight:600;">Ghép trận tự động trực tuyến</span>
+                <div class="tt-btn-row">
+                  <button class="tt-bigbtn is-red" id="btn-start-pvp">
+                    ⚔️ Bắt Đầu Tìm Đối Thủ (PvP)
+                    <em>Ghép trận tự động trực tuyến</em>
                   </button>
-                  <button class="decision-big-btn shobu" id="btn-start-and-open-tab2" style="min-width:250px;">
-                    🗗 Tìm Trận & Mở Luôn Tab 2<br/>
-                    <span style="font-size:11.5px; font-weight:600;">Tiện lợi để test 2 Tab đối kháng</span>
+                  <button class="tt-bigbtn is-dark" id="btn-start-and-open-tab2">
+                    🗗 Tìm Trận & Mở Luôn Tab 2
+                    <em>Tiện lợi để test 2 Tab đối kháng</em>
                   </button>
                 </div>
               `
@@ -2281,6 +3832,14 @@ class HanaKoiApp {
         </div>
       </div>
     `;
+  }
+
+  /** Mã phòng hiển thị như các thẻ gỗ sơn mài, mỗi ký tự một ô */
+  buildRoomCodeTilesHTML(code) {
+    const chars = Array.from(String(code));
+    return `<div class="tt-code-tiles" aria-label="Mã phòng ${code}">${chars
+      .map((c) => `<i aria-hidden="true">${c}</i>`)
+      .join('')}</div>`;
   }
 
   bindPvpLobbyModalEvents(root) {
@@ -2355,68 +3914,47 @@ class HanaKoiApp {
 
     return `
       <div class="modal-backdrop" id="modal-backdrop-close">
-        <div class="modal-window" style="width:min(920px, calc(95 * var(--avw, 1vw)));">
-          <div class="modal-header">
-            <h2>🏯 Tạo Phòng Mã Số & Vào Phòng (Mở 2 Tab Chơi Thử)</h2>
+        <div class="modal-window tt-panel tt-mp" style="width:min(920px, calc(95 * var(--avw, 1vw)));">
+          <div class="modal-header tt-head">
+            <h2 class="tt-title">🏯 Phòng Mã Số <small>Tạo Phòng & Vào Phòng (Mở 2 Tab Chơi Thử)</small></h2>
             <button class="close-modal-btn" id="btn-close-modal">✕</button>
           </div>
           <div class="modal-body">
-            <div class="arena-hero-banner">
+            <div class="tt-hero is-short">
               <img src="./public/assets/pvp_arena_banner.webp?v=2" alt="Custom Room Banner" />
-              <div class="arena-hero-overlay">
+              <div class="tt-hero-text">
                 <h3>🏯 Phòng Trà Đạo Mã Số (Custom Room 2 Tab)</h3>
                 <p>Tạo mã phòng riêng ở Tab 1 rồi nhập mã số đó ở Tab 2 (hoặc bấm nút Mở Tab 2 tự động vào phòng) để chơi thử 2 người trực tiếp!</p>
               </div>
             </div>
 
-            ${
-              this.customRoomError
-                ? `<div style="background:#ffe3e8; border:2px solid #d62839; color:#8f1822; padding:10px 14px; border-radius:12px; font-weight:800; font-size:13px; margin-bottom:12px;">
-                     ⚠️ ${this.customRoomError}
-                   </div>`
-                : ''
-            }
+            ${this.customRoomError ? `<div class="tt-error">⚠️ ${this.customRoomError}</div>` : ''}
 
-            <div class="mp-split-grid">
-              <!-- Column 1: Create Room (Tab 1 - Host) -->
-              <div class="mp-panel-card">
-                <div style="font-size:12px; font-weight:800; color:#b52b2f;">
-                  CHỦ PHÒNG (TAB 1)
-                </div>
-                <h3 style="font-size:18px; color:#8f1822;">🏯 Tạo Phòng Mã Số Mới</h3>
-                <p style="font-size:12.5px; color:var(--text-muted); line-height:1.45;">
+            <div class="tt-split">
+              <!-- Cột 1: Tạo phòng (Tab 1 - Chủ phòng) -->
+              <div class="tt-card tt-form">
+                <span class="tt-role is-red">CHỦ PHÒNG (TAB 1)</span>
+                <h3 class="tt-form-title">🏯 Tạo Phòng Mã Số Mới</h3>
+                <p class="tt-help">
                   Đặt mã phòng tùy ý (VD: <strong>6868</strong>) hoặc để trống để hệ thống tự sinh mã 4 chữ số.
                 </p>
+                <label class="tt-label" for="input-host-name">Tên của bạn:</label>
+                <input type="text" class="tt-input" id="input-host-name" value="${multiplayerService.playerName}" />
+                <label class="tt-label" for="input-create-code">Mã số phòng muốn tạo (Tùy chọn):</label>
+                <input type="text" class="tt-input" id="input-create-code" placeholder="VD: 6868 (Để trống = Tự tạo mã)" maxlength="8" />
 
-                <div>
-                  <label style="font-size:11.5px; font-weight:800; display:block; margin-bottom:4px;">Tên của bạn:</label>
-                  <input type="text" class="mp-input" id="input-host-name" value="${multiplayerService.playerName}" style="margin-bottom:8px;" />
-                  <label style="font-size:11.5px; font-weight:800; display:block; margin-bottom:4px;">Mã số phòng muốn tạo (Tùy chọn):</label>
-                  <input type="text" class="mp-input" id="input-create-code" placeholder="VD: 6868 (Để trống = Tự tạo mã)" maxlength="8" />
-                </div>
-
-                <button class="decision-big-btn koikoi" id="btn-create-room" style="width:100%;">
-                  🏯 Tạo Phòng Mã Số Ngay
-                </button>
+                <button class="tt-bigbtn is-red" id="btn-create-room">🏯 Tạo Phòng Mã Số Ngay</button>
 
                 ${
                   waitingRoomCode
                     ? `
-                  <div class="room-code-showcase">
-                    <div style="font-size:12px; font-weight:800; color:#b52b2f;">
-                      ${multiplayerService.roomStatus === 'playing' ? '🟢 ĐANG TRONG TRẬN ĐẤU' : '⏳ ĐANG CHỜ NGƯỜI CHƠI THỨ 2 VÀO PHÒNG'}
-                    </div>
-                    <div class="room-code-digits">${waitingRoomCode}</div>
-                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">
-                      Hãy mở Tab 2 và nhập mã <strong>${waitingRoomCode}</strong> ở khung bên phải, hoặc bấm nút dưới đây:
-                    </p>
-                    <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
-                      <button class="nav-btn primary-gold" id="btn-open-tab2-room" style="justify-content:center;">
-                        🗗 Mở Tab 2 & Vào Thẳng Phòng #${waitingRoomCode}
-                      </button>
-                      <button class="nav-btn" id="btn-copy-room-code" style="justify-content:center;">
-                        📋 Sao Chép Mã
-                      </button>
+                  <div class="tt-code">
+                    <small>${multiplayerService.roomStatus === 'playing' ? '🟢 ĐANG TRONG TRẬN ĐẤU' : '⏳ ĐANG CHỜ NGƯỜI CHƠI THỨ 2 VÀO PHÒNG'}</small>
+                    ${this.buildRoomCodeTilesHTML(waitingRoomCode)}
+                    <p>Hãy mở Tab 2 và nhập mã <strong>${waitingRoomCode}</strong> ở khung bên phải, hoặc bấm nút dưới đây:</p>
+                    <div class="tt-mini-row">
+                      <button class="tt-mini" id="btn-open-tab2-room">🗗 Mở Tab 2 & Vào Thẳng Phòng #${waitingRoomCode}</button>
+                      <button class="tt-mini" id="btn-copy-room-code">📋 Sao Chép Mã</button>
                     </div>
                   </div>
                 `
@@ -2424,43 +3962,29 @@ class HanaKoiApp {
                 }
               </div>
 
-              <!-- Column 2: Join Room by Code (Tab 2 - Guest) -->
-              <div class="mp-panel-card">
-                <div style="font-size:12px; font-weight:800; color:var(--jade);">
-                  KHÁCH THÁCH ĐẤU (TAB 2)
-                </div>
-                <h3 style="font-size:18px; color:#8f1822;">🚪 Nhập Mã Số Để Vào Phòng</h3>
-                <p style="font-size:12.5px; color:var(--text-muted); line-height:1.45;">
+              <!-- Cột 2: Vào phòng bằng mã (Tab 2 - Khách) -->
+              <div class="tt-card tt-form">
+                <span class="tt-role is-jade">KHÁCH THÁCH ĐẤU (TAB 2)</span>
+                <h3 class="tt-form-title">🚪 Nhập Mã Số Để Vào Phòng</h3>
+                <p class="tt-help">
                   Nhập mã số phòng đã tạo ở Tab 1 để kết nối 2 Tab và bắt đầu ván bài Hoa đối kháng thời gian thực!
                 </p>
+                <label class="tt-label" for="input-join-code">Nhập Mã Số Phòng:</label>
+                <input type="text" class="tt-input is-code" id="input-join-code" placeholder="Nhập mã phòng (VD: 6868)..." maxlength="8" />
 
-                <div>
-                  <label style="font-size:11.5px; font-weight:800; display:block; margin-bottom:4px;">Nhập Mã Số Phòng:</label>
-                  <input type="text" class="mp-input" id="input-join-code" placeholder="Nhập mã phòng (VD: 6868)..." maxlength="8" style="font-size:18px; text-align:center; letter-spacing:3px;" />
-                </div>
-
-                <button class="decision-big-btn shobu" id="btn-join-room" style="width:100%;">
-                  🚪 Vào Phòng Bằng Mã Số
-                </button>
+                <button class="tt-bigbtn is-dark" id="btn-join-room">🚪 Vào Phòng Bằng Mã Số</button>
 
                 ${
                   localRooms.length > 0
                     ? `
-                  <div style="margin-top:6px; padding-top:10px; border-top:1px dashed var(--hinoki-border);">
-                    <div style="font-size:12px; font-weight:800; margin-bottom:6px;">
-                      ⚡ Phòng đang mở trên máy của bạn (Bấm để vào ngay):
-                    </div>
-                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                      ${localRooms
-                        .map(
-                          (r) => `
-                        <button class="nav-btn primary-gold" data-quick-join="${r.roomCode}">
-                          🚪 Vào Phòng #${r.roomCode} (${r.hostName || 'Chủ phòng'})
-                        </button>
-                      `
-                        )
-                        .join('')}
-                    </div>
+                  <div class="tt-open-rooms">
+                    <small>⚡ Phòng đang mở trên máy của bạn (Bấm để vào ngay):</small>
+                    ${localRooms
+                      .map(
+                        (r) => `
+                      <button class="tt-open-room" data-quick-join="${r.roomCode}">🚪 Vào Phòng #${r.roomCode} (${r.hostName || 'Chủ phòng'})</button>`
+                      )
+                      .join('')}
                   </div>
                 `
                     : ''
@@ -2492,6 +4016,7 @@ class HanaKoiApp {
       if (hostNameInput) multiplayerService.setPlayerName(hostNameInput.value);
       this.customRoomError = '';
       this.gameMode = 'custom';
+      this.bumpMatchToken();
       this.engine.startNewMatch(this.saveData.matchRounds || 3);
       const initialCanonical = this.engine.exportCanonicalState('host', null);
       await multiplayerService.createCustomRoom(
@@ -2646,33 +4171,29 @@ class HanaKoiApp {
   // ==========================================================================
 
   buildOpponentsModalHTML() {
+    const defeatedCount = ANIME_OPPONENTS.filter((o) => this.saveData.defeatedOpponents.includes(o.id)).length;
     return `
       <div class="modal-backdrop" id="modal-backdrop-close">
-        <div class="modal-window">
-          <div class="modal-header">
-            <h2>🌸 Đài Khiêu Chiến 12 Kỳ Thủ Điển Tích Nhật Bản (12 Tháng Bài Hoa)</h2>
+        <div class="modal-window tt-panel tt-opp">
+          <div class="modal-header tt-head">
+            <h2 class="tt-title">🌸 Đài Khiêu Chiến <small>12 Kỳ Thủ Điển Tích Nhật Bản · 12 Tháng Bài Hoa</small></h2>
             <button class="close-modal-btn" id="btn-close-modal">✕</button>
           </div>
+          <div class="tt-toolbar">
+            <span class="tt-tb-label">Độ dài trận đấu:</span>
+            ${[3, 6, 12]
+              .map(
+                (r) => `
+              <button class="tt-tab ${this.engine.totalRounds === r ? 'active' : ''}" data-round-len="${r}">${r} Tháng</button>`
+              )
+              .join('')}
+            <span class="tt-pill">${defeatedCount}/${ANIME_OPPONENTS.length} đã chinh phục</span>
+          </div>
           <div class="modal-body">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
-              <p style="font-size:13px; color:var(--text-muted);">
-                Chinh phục trọn bộ <strong>12 Nhân Vật Điển Tích Ukiyo-e × Anime</strong> đại diện cho 12 Tháng Bài Hoa (gồm cả <strong>Công Chúa Tsunade</strong> Tháng 7)!
-              </p>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:12.5px; color:#9e1f28; font-weight:800;">Độ dài trận đấu:</span>
-                ${[3, 6, 12]
-                  .map(
-                    (r) => `
-                  <button class="tab-btn ${this.engine.totalRounds === r ? 'active' : ''}" data-round-len="${r}">
-                    ${r} Tháng
-                  </button>
-                `
-                  )
-                  .join('')}
-              </div>
-            </div>
-
-            <div class="opponents-select-grid">
+            <p class="tt-note">
+              Chinh phục trọn bộ <strong>12 Nhân Vật Điển Tích Ukiyo-e × Anime</strong> đại diện cho 12 Tháng Bài Hoa (gồm cả <strong>Công Chúa Tsunade</strong> Tháng 7)!
+            </p>
+            <div class="tt-opp-grid">
               ${ANIME_OPPONENTS.map((opp) => {
                 const defeated = this.saveData.defeatedOpponents.includes(opp.id);
                 const backReward = opp.unlocksCardBack
@@ -2683,32 +4204,26 @@ class HanaKoiApp {
                   : '';
 
                 return `
-                  <div class="opponent-select-card" style="border-color:${this.currentOpponent.id === opp.id ? opp.themeColor : '#dfba92'}">
-                    <div class="opp-card-banner">
-                      <img src="${opp.avatar}" alt="${opp.name}" />
-                      <div style="position:absolute; top:10px; left:10px; background:rgba(255,248,237,0.95); border:1.5px solid #c97a40; padding:3px 9px; border-radius:99px; font-size:11px; color:#9e1f28; font-weight:800;">
-                        ${opp.monthLabel || `Tháng ${opp.month || 1}`} ・ ${opp.difficultyLabel}
-                      </div>
-                      <div style="position:absolute; top:10px; right:10px; background:${defeated ? '#1b8a5a' : 'rgba(255,248,237,0.92)'}; color:${defeated ? '#fff' : '#5a2716'}; border:1.5px solid #c97a40; padding:3px 9px; border-radius:99px; font-size:11px; font-weight:800;">
-                        ${defeated ? `✅ ${opp.gender} (${opp.age}t)` : `${opp.gender} ・ ${opp.age} tuổi`}
-                      </div>
+                  <div class="tt-opp-card ${this.currentOpponent.id === opp.id ? 'is-current' : ''}">
+                    <div class="tt-opp-banner">
+                      <button class="tt-opp-zoom" data-view-opp="${opp.id}" aria-label="Xem ảnh ${opp.name}">
+                        <img src="${opp.avatar}" alt="${opp.name}" />
+                        <span class="tt-opp-zoom-hint" aria-hidden="true">⤢ Xem ảnh</span>
+                      </button>
+                      <span class="tt-opp-month">${opp.monthLabel || `Tháng ${opp.month || 1}`}</span>
+                      ${defeated ? '<span class="tt-opp-who is-won">✓ Đã thắng</span>' : ''}
+                      <span class="tt-opp-diff">${opp.difficultyLabel}</span>
                     </div>
-                    <div class="opp-card-body">
-                      <div>
-                        <span style="font-size:11px; color:#b87314; font-weight:700;">${opp.jpName}</span>
-                        <h3 style="font-size:17px; color:#8f1822; font-family:var(--font-display);">${opp.name}</h3>
-                      </div>
-                      <p style="font-size:12px; color:var(--text-muted); line-height:1.4; flex:1;">
-                        ${opp.bio}
-                      </p>
-                      <div style="background:#fff4e2; border:1px solid #e2be98; border-radius:10px; padding:7px 9px; font-size:11px; color:#6b3b25;">
+                    <div class="tt-opp-body">
+                      <small class="tt-opp-jp">${opp.jpName}</small>
+                      <h3 class="tt-opp-name">${opp.name}</h3>
+                      <p class="tt-opp-bio">${opp.bio}</p>
+                      <div class="tt-opp-reward">
                         🎁 <strong>Thưởng thắng:</strong> +${opp.rewardCoins} Xu
                         ${backReward ? `<br/>🎴 Mặt lưng: <em>${backReward}</em>` : ''}
                         ${skinReward ? `<br/>🎨 Mặt bài: <em>${skinReward}</em>` : ''}
                       </div>
-                      <button class="nav-btn primary-gold" data-challenge-opp="${opp.id}" style="width:100%; justify-content:center; margin-top:4px;">
-                        🌸 Khiêu Chiến ${opp.name}
-                      </button>
+                      <button class="tt-cta" data-challenge-opp="${opp.id}">🌸 Khiêu Chiến ${opp.name}</button>
                     </div>
                   </div>
                 `;
@@ -2739,12 +4254,115 @@ class HanaKoiApp {
         this.renderActiveModal();
       };
     });
+    root.querySelectorAll('[data-view-opp]').forEach((btn) => {
+      btn.onclick = () => this.openCharacterViewer(btn.getAttribute('data-view-opp'));
+    });
     root.querySelectorAll('[data-challenge-opp]').forEach((btn) => {
       btn.onclick = () => {
         const oppId = btn.getAttribute('data-challenge-opp');
         this.startMatchWithOpponent(oppId, this.saveData.matchRounds || 3);
       };
     });
+  }
+
+  /**
+   * Xem ảnh nhân vật toàn màn hình (bấm ảnh trong bảng Chọn đối thủ).
+   * Lớp phủ gắn thẳng vào #modal-root, không đi qua renderActiveModal; ← → đổi nhân vật, Esc/chạm nền để đóng.
+   */
+  openCharacterViewer(oppId) {
+    const root = document.getElementById('modal-root');
+    if (!root) return;
+    let idx = ANIME_OPPONENTS.findIndex((o) => o.id === oppId);
+    if (idx < 0) return;
+    this.closeCharacterViewer();
+
+    const viewer = document.createElement('div');
+    viewer.className = 'tt-viewer';
+    viewer.setAttribute('role', 'dialog');
+    viewer.setAttribute('aria-modal', 'true');
+    const total = ANIME_OPPONENTS.length;
+
+    const render = () => {
+      const opp = ANIME_OPPONENTS[idx];
+      const defeated = this.saveData.defeatedOpponents.includes(opp.id);
+      viewer.setAttribute('aria-label', `Ảnh ${opp.name}`);
+      setElementMarkup(
+        viewer,
+        `
+        <button class="tt-viewer-close" data-viewer="close" aria-label="Đóng">✕</button>
+        <button class="tt-viewer-nav is-prev" data-viewer="prev" aria-label="Nhân vật trước">‹</button>
+        <figure class="tt-viewer-stage">
+          <div class="tt-viewer-frame">
+            <img src="${opp.avatar}" alt="${opp.name}" />
+          </div>
+          <figcaption class="tt-viewer-plate">
+            <span class="tt-viewer-month">${opp.monthLabel || `Tháng ${opp.month || 1}`}</span>
+            <small class="tt-viewer-jp">${opp.jpName}</small>
+            <h3 class="tt-viewer-name">${opp.name}</h3>
+            ${opp.title ? `<div class="tt-viewer-sub">${opp.title.replace(/\s*\(Tháng \d+\)\s*$/, '')}</div>` : ''}
+            <div class="tt-viewer-tags">
+              <span>${opp.difficultyLabel}</span>
+              ${defeated ? '<span class="is-won">✓ Đã thắng</span>' : ''}
+            </div>
+            <p class="tt-viewer-bio">${opp.bio}</p>
+            <button class="tt-cta" data-viewer="challenge">🌸 Khiêu Chiến ${opp.name}</button>
+            <span class="tt-viewer-count">${idx + 1} / ${total}</span>
+          </figcaption>
+        </figure>
+        <button class="tt-viewer-nav is-next" data-viewer="next" aria-label="Nhân vật sau">›</button>
+      `
+      );
+    };
+    const step = (d) => {
+      idx = (idx + d + total) % total;
+      render();
+    };
+
+    viewer.onclick = (e) => {
+      const act = e.target.closest('[data-viewer]')?.getAttribute('data-viewer');
+      if (act === 'prev') step(-1);
+      else if (act === 'next') step(1);
+      else if (act === 'challenge') {
+        const oppId = ANIME_OPPONENTS[idx].id;
+        this.closeCharacterViewer();
+        this.startMatchWithOpponent(oppId, this.saveData.matchRounds || 3);
+      } else if (act === 'close' || !e.target.closest('.tt-viewer-frame, .tt-viewer-plate')) {
+        this.closeCharacterViewer();
+      }
+    };
+    // Vuốt ngang trên điện thoại để đổi nhân vật
+    let touchX = null;
+    viewer.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+    viewer.addEventListener('touchend', (e) => {
+      if (touchX === null) return;
+      const dx = e.changedTouches[0].clientX - touchX;
+      touchX = null;
+      if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
+    });
+    this.characterViewerKeys = (e) => {
+      if (e.key === 'Escape') this.closeCharacterViewer();
+      else if (e.key === 'ArrowLeft') step(-1);
+      else if (e.key === 'ArrowRight') step(1);
+      else return;
+      e.stopPropagation();
+    };
+    document.addEventListener('keydown', this.characterViewerKeys, true);
+
+    render();
+    root.appendChild(viewer);
+    this.characterViewer = viewer;
+    viewer.querySelector('.tt-viewer-close').focus({ preventScroll: true });
+  }
+
+  closeCharacterViewer() {
+    if (this.characterViewerKeys) {
+      document.removeEventListener('keydown', this.characterViewerKeys, true);
+      this.characterViewerKeys = null;
+    }
+    if (this.characterViewer) {
+      this.characterViewer.remove();
+      this.characterViewer = null;
+    }
   }
 
   // ==========================================================================
@@ -2874,9 +4492,9 @@ class HanaKoiApp {
 
     return `
       <div class="modal-backdrop kk-backdrop" id="modal-backdrop-close">
-        <div class="modal-window scroll-modal">
-          <div class="modal-header">
-            <h2>Bộ Sưu Tập <small>Mặt Lưng · Thiết Kế Bài · Phòng Trưng Bày 3D</small></h2>
+        <div class="modal-window scroll-modal tt-panel tt-shop">
+          <div class="modal-header tt-head">
+            <h2 class="tt-title">Bộ Sưu Tập <small>Mặt Lưng · Thiết Kế Bài · Phòng Trưng Bày 3D</small></h2>
             <button class="close-modal-btn" id="btn-close-modal">✕</button>
           </div>
           <div class="modal-body">
@@ -2915,10 +4533,10 @@ class HanaKoiApp {
       </div>
       <div class="inspector-flippable-card ${this.inspectorFlipped ? 'flipped' : ''}" id="inspector-3d-card">
         <div class="inspector-face front">
-          ${renderCardFaceSVG(inspected, this.saveData.equippedSkin, true)}
+          ${renderCardFaceSVG(inspected, this.saveData.equippedSkin, true, { size: 'lg' })}
         </div>
         <div class="inspector-face back">
-          ${renderCardBackSVG(this.saveData.equippedBack)}
+          ${renderCardBackSVG(this.saveData.equippedBack, { size: 'lg' })}
         </div>
       </div>
       <button class="nav-btn" id="btn-flip-inspector" style="justify-content:center;">
@@ -2944,14 +4562,14 @@ class HanaKoiApp {
     if (flipCard) {
       flipCard.onclick = () => {
         this.inspectorFlipped = !this.inspectorFlipped;
-        soundEngine.playCardSnap(false);
+        soundEngine.playCardFlip();
         flipCard.classList.toggle('flipped', this.inspectorFlipped);
       };
     }
     if (flipBtn && flipCard) {
       flipBtn.onclick = () => {
         this.inspectorFlipped = !this.inspectorFlipped;
-        soundEngine.playCardSnap(false);
+        soundEngine.playCardFlip();
         flipCard.classList.toggle('flipped', this.inspectorFlipped);
       };
     }
@@ -2980,7 +4598,7 @@ class HanaKoiApp {
     const bonusBtn = root.querySelector('#btn-unlock-all-demo');
     if (bonusBtn) {
       bonusBtn.onclick = () => {
-        soundEngine.playGachaReveal(true);
+        soundEngine.playCoinReward(6);
         this.saveData.coins += 2000;
         this.persistSave();
         this.renderTopNav();
@@ -3086,72 +4704,59 @@ class HanaKoiApp {
   buildGachaModalHTML() {
     return `
       <div class="modal-backdrop kk-backdrop" id="modal-backdrop-close">
-        <div class="modal-window scroll-modal is-gacha">
-          <div class="modal-header">
-            <h2>Điện Cầu May <small>Omikuji · Sưu tầm Mặt Lưng &amp; Bộ Bài Hiếm</small></h2>
+        <div class="modal-window scroll-modal is-gacha tt-panel tt-shop">
+          <div class="modal-header tt-head">
+            <h2 class="tt-title">Điện Cầu May <small>Omikuji · Sưu tầm Mặt Lưng &amp; Bộ Bài Hiếm</small></h2>
             <button class="close-modal-btn" id="btn-close-modal">✕</button>
           </div>
           <div class="modal-body">
-            <div class="gacha-hero">
-              <div class="kk-kicker">🌸 Ước nguyện đền hoa anh đào 🌸</div>
+            <div class="tt-card gacha-hero">
+              <div class="tt-gacha-kicker">🌸 Ước nguyện đền hoa anh đào 🌸</div>
               <h3 class="gacha-title">Rút Quẻ Mở Hộp Sơn Mài Edo</h3>
               <p class="gacha-desc">
                 Cơ hội trúng tất cả <strong>10 Thiết Kế Mặt Lưng</strong> và <strong>6 Bộ Mặt Bài Nghệ Thuật</strong> (bao gồm cả bậc Huyền Thoại SSR &amp; Thần Thoại UR!). Nếu rút trùng sẽ được hoàn trả <strong>+90 Xu Hoa Lộc</strong>!
               </p>
 
-              <div class="kk-actions gacha-actions">
-                <button class="kk-stroke-btn is-indigo gacha-btn is-tube-left" id="btn-gacha-1">
+              <div class="tt-gacha-actions">
+                <button class="tt-gacha-btn is-dark gacha-btn" id="btn-gacha-1">
                   <img class="gacha-tube" src="./public/assets/koikoi_scroll/omikuji_1.webp" alt="" draggable="false" />
-                  <span class="kk-btn-main">Rút 1 Quẻ Hoa</span>
-                  <span class="kk-btn-sub">🪙 150 Xu Hoa</span>
+                  <span class="tt-gacha-text"><b>Rút 1 Quẻ Hoa</b><em>🪙 150 Xu Hoa</em></span>
                 </button>
-                <button class="kk-stroke-btn is-vermilion is-glow gacha-btn is-tube-right" id="btn-gacha-5">
-                  <img class="gacha-tube" src="./public/assets/koikoi_scroll/omikuji_5.webp" alt="" draggable="false" />
-                  <span class="kk-btn-main">Rút 5 Quẻ Liên Hoàn</span>
-                  <span class="kk-btn-sub">🪙 650 Xu Hoa · Tiết kiệm 100 Xu</span>
+                <button class="tt-gacha-btn is-red is-glow gacha-btn" id="btn-gacha-5">
+                  <img class="gacha-tube" src="./public/assets/koikoi_scroll/omikuji_5.webp?v=2" alt="" draggable="false" />
+                  <span class="tt-gacha-text"><b>Rút 5 Quẻ Liên Hoàn</b><em>🪙 650 Xu Hoa · Tiết kiệm 100 Xu</em></span>
                 </button>
               </div>
 
               <div class="gacha-balance">
                 Số dư hiện tại: <strong>🪙 ${this.saveData.coins.toLocaleString('vi-VN')} Xu Hoa</strong>
               </div>
+              ${
+                this.gachaResults.length > 0
+                  ? `
+              <div class="tt-results">
+                <h4 class="gacha-results-title">🎉 Kết quả rút quẻ vừa rồi</h4>
+                <div class="tt-res-cards">
+                  ${this.gachaResults
+                    .map((r) => {
+                      const rar = RARITY_CONFIG[r.item.rarity];
+                      const sampleCard = getCardById(r.sampleCardId || 45) || HANAFUDA_CARDS[0];
+                      const kindLabel = r.kind === 'back' ? 'Mặt Lưng Bài' : `Lá: ${sampleCard.viName}`;
+                      return `
+                    <div class="tt-res-card ${r.isNew ? 'is-new' : ''}" title="${r.item.name} · ${rar.label} · ${kindLabel}">
+                      <div class="tt-res-face">
+                        ${r.kind === 'back' ? renderCardBackSVG(r.item.id) : renderCardFaceSVG(sampleCard, r.item.id, true)}
+                      </div>
+                      <span class="tt-res-name">${r.item.name.replace(/\s*\(.*\)\s*$/, '')}</span>
+                      <span class="tt-res-badge">${r.isNew ? '✨ MỚI MỞ KHÓA!' : '🔄 Trùng (+90 Xu)'}</span>
+                    </div>`;
+                    })
+                    .join('')}
+                </div>
+              </div>`
+                  : ''
+              }
             </div>
-
-            ${
-              this.gachaResults.length > 0
-                ? `
-              <div class="kk-divider sm-divider" aria-hidden="true"></div>
-              <h4 class="gacha-results-title">🎉 Kết quả rút quẻ vừa rồi</h4>
-              <div class="collection-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
-                ${this.gachaResults
-                  .map((r) => {
-                    const rar = RARITY_CONFIG[r.item.rarity];
-                    const sampleCard = getCardById(r.sampleCardId || 45) || HANAFUDA_CARDS[0];
-                    return `
-                    <div class="collectible-item-card ${r.isNew ? 'is-new' : ''}">
-                      <span class="rarity-tag">${rar.label}</span>
-                      <div class="preview-card-holder" style="width:78px; height:120px;">
-                        ${
-                          r.kind === 'back'
-                            ? renderCardBackSVG(r.item.id)
-                            : renderCardFaceSVG(sampleCard, r.item.id, true)
-                        }
-                      </div>
-                      <div style="font-size:12.5px; font-weight:800; color:#8f1822;">${r.item.name}</div>
-                      <div style="font-size:10.5px; color:#7a5533; font-weight:700;">
-                        ${r.kind === 'back' ? 'Mặt Lưng Bài' : `Lá: ${sampleCard.viName}`}
-                      </div>
-                      <div style="font-size:11px; color:${r.isNew ? 'var(--jade)' : '#b87314'}; font-weight:800;">
-                        ${r.isNew ? '✨ MỚI MỞ KHÓA!' : '🔄 Trùng (+90 Xu)'}
-                      </div>
-                    </div>
-                  `;
-                  })
-                  .join('')}
-              </div>
-            `
-                : ''
-            }
           </div>
         </div>
       </div>
@@ -3239,6 +4844,12 @@ class HanaKoiApp {
       }
 
       soundEngine.playGachaReveal(hasHigh);
+      const dupCount = results.filter((r) => !r.isNew).length;
+      if (dupCount > 0) {
+        setTimeout(() => {
+          soundEngine.playCoinReward(Math.min(5, dupCount + 2));
+        }, 420);
+      }
       this.particles.triggerBurst(
         window.innerWidth / 2,
         window.innerHeight / 2,
@@ -3271,19 +4882,67 @@ class HanaKoiApp {
   // ==========================================================================
 
   buildRulesModalHTML() {
+    const pSum = this.getCompactYakuSummary(this.engine.playerCaptured, this.engine.aiCaptured, false);
+    const oSum = this.getCompactYakuSummary(this.engine.aiCaptured, this.engine.playerCaptured, true);
+    const oppName = this.getOpponentDisplayName();
+
     return `
       <div class="modal-backdrop" id="modal-backdrop-close">
-        <div class="modal-window">
-          <div class="modal-header">
-            <h2>📜 Cẩm Nang Luật Chơi Bài Hoa (Hanafuda Koi-Koi) & Bảng Tổ Hợp Yaku</h2>
+        <div class="modal-window rules-modal-window tt-panel tt-rules">
+          <div class="hk-compact-only hk-sheet-grabber" aria-hidden="true"></div>
+          <div class="modal-header tt-head">
+            <h2 class="tt-title">📜 Bảng Tổ Hợp Yaku & Luật Chơi</h2>
             <button class="close-modal-btn" id="btn-close-modal">✕</button>
           </div>
           <div class="modal-body">
+            <div class="hk-compact-only hk-yaku-sheet-live">
+              <div class="hk-yaku-live-col is-player">
+                <div class="hk-yaku-live-head">
+                  <strong>Bạn đã ăn (${this.engine.playerCaptured.length} lá)</strong>
+                  <span>${pSum.chipLabel}</span>
+                </div>
+                <div class="hk-yaku-live-tags">
+                  ${
+                    pSum.completed.length + pSum.candidates.length > 0
+                      ? [
+                          ...pSum.completed.map(
+                            (y) => `<span class="hk-live-pill done">✓ ${y.viName} (${y.points}đ)</span>`
+                          ),
+                          ...pSum.candidates.map(
+                            (c) => `<span class="hk-live-pill prog">✦ ${c.shortName} ${c.owned}/${c.need}</span>`
+                          )
+                        ].join('')
+                      : '<span class="hk-live-pill muted">Chưa có bộ sắp thành</span>'
+                  }
+                </div>
+              </div>
+              <div class="hk-yaku-live-col is-opp">
+                <div class="hk-yaku-live-head">
+                  <strong>${oppName} (${this.engine.aiCaptured.length} lá)</strong>
+                  <span>${oSum.chipLabel}</span>
+                </div>
+                <div class="hk-yaku-live-tags">
+                  ${
+                    oSum.completed.length + oSum.candidates.length > 0
+                      ? [
+                          ...oSum.completed.map(
+                            (y) => `<span class="hk-live-pill warn">⚠ ${y.viName} (${y.points}đ)</span>`
+                          ),
+                          ...oSum.candidates.map(
+                            (c) => `<span class="hk-live-pill warn">▲ ${c.shortName} ${c.owned}/${c.need}</span>`
+                          )
+                        ].join('')
+                      : '<span class="hk-live-pill muted">Chưa có bộ sắp thành</span>'
+                  }
+                </div>
+              </div>
+            </div>
+
             <button class="tut-replay-banner" id="btn-rules-open-tutorial">
               <img src="${getOpponentById('ayame').avatar}" alt="" />
               <span><strong>Lần đầu chơi?</strong> Xem hướng dẫn từng bước cùng Ayame ▶</span>
             </button>
-            <div style="background:#fff4e2; border-left:4px solid #b52b2f; padding:12px 16px; border-radius:12px; margin-bottom:18px; font-size:13px; line-height:1.55; color:#3a1f16;">
+            <div class="rules-quick-box tt-card">
               <strong>🌸 Cách chơi cơ bản cực dễ trong 30 giây:</strong><br/>
               1. Bộ bài Hoa gồm <strong>48 lá</strong> chia đều cho <strong>12 Tháng</strong> (mỗi tháng 4 lá ứng với 1 loài hoa/cây).<br/>
               2. Đến lượt mình, bạn thực hiện <strong>2 bước</strong>:<br/>
@@ -3294,23 +4953,23 @@ class HanaKoiApp {
               &nbsp;&nbsp;• <strong>KOI-KOI (こいこい):</strong> Cược tiếp để ghép thêm Yaku mới! Đạt từ <strong>7 điểm trở lên sẽ được NHÂN ĐÔI (×2)</strong>, nhưng nếu đối thủ tạo được Yaku trước khi bạn dừng, đối thủ sẽ cướp chiến thắng và nhân đôi điểm của họ!
             </div>
 
-            <h3 style="color:#8f1822; font-family:var(--font-display); margin-bottom:12px;">
+            <h3 class="rules-section-h3">
               🏆 Bảng Tổ Hợp Điểm Yaku (Chuẩn Koi-Koi Nhật Bản)
             </h3>
 
-            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap:12px;">
+            <div class="yaku-catalog-grid">
               ${YAKU_CATALOG.map(
                 (y) => `
-                <div style="background:#fffdf9; border:1.5px solid #e2be98; border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:6px;">
-                  <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <strong style="color:#9e1f28; font-size:14.5px;">${y.viName} ・ ${y.jpName}</strong>
-                    <span class="yaku-prog-badge" style="font-size:12px;">${y.basePoints} Điểm</span>
+                <div class="yaku-catalog-card">
+                  <div class="yaku-catalog-head">
+                    <strong class="yaku-catalog-title">${y.viName} ・ <span class="yaku-catalog-jp">${y.jpName}</span></strong>
+                    <span class="yaku-catalog-pts">${y.basePoints} Điểm</span>
                   </div>
                   ${this.renderYakuCardStrip(y)}
-                  <p style="font-size:12px; color:var(--text-muted); line-height:1.4;">${y.description}</p>
+                  <p class="yaku-catalog-desc">${y.description}</p>
                   ${
                     y.bonusRule
-                      ? `<div style="font-size:11px; color:var(--jade); font-weight:700;">${y.bonusRule}</div>`
+                      ? `<div class="yaku-catalog-bonus">${y.bonusRule}</div>`
                       : ''
                   }
                 </div>
@@ -3389,6 +5048,11 @@ class HanaKoiApp {
     this.persistSave();
     this.activeModal = null;
     this.renderActiveModal();
+    if (this._pendingRoundOpening) {
+      this._pendingRoundOpening = false;
+      this.runRoundOpeningSequence();
+      return;
+    }
     if (!this.isMultiplayerMatch() && this.engine.phase === 'AI_TURN' && !this.isAnimating) {
       this.scheduleAiTurn();
     }

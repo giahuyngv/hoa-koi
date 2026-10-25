@@ -1,0 +1,18 @@
+1. Card Sound Effects (card_shuffle.mp3, card_deal.mp3, card_flip.mp3, card_slap.mp3)
+   Source: Casino Audio (1.1) by Kenney Vleugels (https://kenney.nl/assets/casino-audio)
+   License: Creative Commons Zero (CC0 1.0 Universal - Public Domain)
+
+2. Traditional Japanese & UI Sound Effects (month_taiko.mp3, yaku_kasu.mp3, yaku_tanzaku.mp3, yaku_tane.mp3, yaku_hikari.mp3, yaku_koto.mp3, koikoi_hyoshigi.mp3, ui_click.mp3, coin_reward.mp3)
+   Sources:
+   - Versilian Community Sample Library (VCSL) by Versilian Studios LLC (https://github.com/sgossner/VCSL)
+     (Acoustic recordings of East Asian Zither, Folk & Concert Harps, Bronze Gongs, Taiko/Tom/Bass Drums, Hardwood Clappers/Woodblocks, and Hand Bells)
+   - RPG Audio by Kenney Vleugels (https://kenney.nl/assets/rpg-audio)
+     (Metallic coin handling recordings)
+   License: Creative Commons Zero (CC0 1.0 Universal - Public Domain)
+   https://creativecommons.org/publicdomain/zero/1.0/
+
+3. Background Music Tracks (public/assets/bgm/minamo.mp3, minamo2.mp3, shizima2.mp3)
+   Source: PeriTune (Sei Mutsuki - https://peritune.com/)
+   Tracks: "Minamo", "Minamo2", "Shizima2"
+   License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+   https://peritune.com/terms/

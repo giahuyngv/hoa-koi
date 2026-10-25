@@ -1,21 +1,25 @@
-# File nén & Build
+# Gói/build
 *.zip
-GAME_DEPLOY.zip
 node_modules/
-dist/
-build/
+HOAKOI_Standalone.html
+src/app.bundle.dev.js
 
-# Assets media / Ảnh dung lượng lớn không cần theo dõi mã nguồn
-*.jpg
-*.png
-*.gif
-*.mp4
-*.wav
+# Dữ liệu chạy (server tự tạo lại)
+data/*
+!data/.gitkeep
+
+# Thư mục làm việc/ảnh gốc không cần cho game
+_backup_assets/
+art-test/
+docs/
+design_mockups/
 Ảnh bug/
-design_koikoi_modal/
 
-# File hệ thống & IDE
+# Hệ thống & công cụ
+.env
+.env.*
 .DS_Store
 Thumbs.db
 .claude/
 .agents/
+.zdeploy.yml
