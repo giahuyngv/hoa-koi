@@ -553,46 +553,60 @@ class HanaKoiApp {
       if (this.activeModal === 'captured_view') return;
       this.isAnimating = true;
       const skinId = this.saveData.equippedSkin;
-      const aiHandRect = cardAnimator.getRect('.ai-hand-zone .hana-card-3d:last-child');
-      const fieldRects = this.snapshotFieldRects();
+      const engine = this.engine;
+
+      // Diễn lại nước đi trên engine cục bộ (giống lượt AI) để lá không ăn có ô đích trên chiếu;
+      // state chuẩn từ server được import ngay sau đó.
+      const playRemoteCard = async (card, captured, fromRect) => {
+        const fieldRects = this.snapshotFieldRects();
+        const matches = engine.getFieldMatches(card);
+        const placed = engine.resolveCardPlacement('ai', card, matches, captured?.[1]?.id);
+        this.renderCenterBoard();
+        if (placed.length > 0) {
+          const matchedCards = placed.slice(1);
+          const relocatedIds = (engine.lastFieldRelocations || []).map((r) => r.card.id);
+          await Promise.all([
+            cardAnimator.animateCaptureSequence({
+              actor: 'ai',
+              playedCard: card,
+              matchedCards,
+              skinId,
+              fromRect,
+              fieldTargetRect: fieldRects[matchedCards[0]?.id],
+              onImpactSound: (bright) => soundEngine.playCardSnap(bright)
+            }),
+            cardAnimator.animateFieldRelocations(fieldRects, { delayMs: 220, relocatedIds })
+          ]);
+          this.renderRightPanel();
+          this.renderLeftPanel();
+        } else {
+          await Promise.all([
+            cardAnimator.animateCardToFieldSlot({
+              card,
+              skinId,
+              fromRect,
+              toFieldCardId: card.id,
+              onLandSound: () => soundEngine.playCardSnap(false)
+            }),
+            cardAnimator.animateFieldRelocations(fieldRects, { delayMs: 0 })
+          ]);
+        }
+      };
 
       if (action.handCard && this.activeModal !== 'captured_view') {
+        const aiHandRect = cardAnimator.getRect('.ai-hand-zone .hana-card-3d:last-child');
+        const idx = engine.aiHand.findIndex((c) => c.id === action.handCard.id);
+        engine.aiHand.splice(idx !== -1 ? idx : engine.aiHand.length - 1, 1);
         soundEngine.playCardDeal(0.36);
-        if (action.capturedHand && action.capturedHand.length > 0) {
-          const matchedCards = action.capturedHand.slice(1);
-          const targetRect = fieldRects[matchedCards[0]?.id];
-          await cardAnimator.animateCaptureSequence({
-            actor: 'ai',
-            playedCard: action.handCard,
-            matchedCards,
-            skinId,
-            fromRect: aiHandRect,
-            fieldTargetRect: targetRect,
-            onImpactSound: (bright) => soundEngine.playCardSnap(bright)
-          });
-        } else {
-          soundEngine.playCardSnap(false);
-        }
+        await playRemoteCard(action.handCard, action.capturedHand, aiHandRect);
       }
 
       if (action.drawnCard && this.activeModal !== 'captured_view') {
         soundEngine.playCardFlip();
         const deckRect = cardAnimator.getRect('#draw-pile-stack');
-        if (action.capturedDraw && action.capturedDraw.length > 0) {
-          const matchedDraw = action.capturedDraw.slice(1);
-          const targetRect2 = fieldRects[matchedDraw[0]?.id];
-          await cardAnimator.animateCaptureSequence({
-            actor: 'ai',
-            playedCard: action.drawnCard,
-            matchedCards: matchedDraw,
-            skinId,
-            fromRect: deckRect,
-            fieldTargetRect: targetRect2,
-            onImpactSound: (bright) => soundEngine.playCardSnap(bright)
-          });
-        } else {
-          soundEngine.playCardSnap(false);
-        }
+        const di = engine.deck.findIndex((c) => c.id === action.drawnCard.id);
+        engine.deck.splice(di !== -1 ? di : 0, 1);
+        await playRemoteCard(action.drawnCard, action.capturedDraw, deckRect);
       }
     } catch {
       // Ignore animation interruptions
