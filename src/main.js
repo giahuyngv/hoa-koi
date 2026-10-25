@@ -437,24 +437,40 @@ class HanaKoiApp {
     this.applyRemoteState = async (canonicalState, lastAction) => {
       if (!this.isMultiplayerMatch()) return;
 
-      // Chờ hiệu ứng cục bộ đang chạy (tối đa 4s) để không bỏ hiệu ứng nước đi của đối thủ
-      if (lastAction && lastAction.type === 'TURN_MOVE') {
+      // TURN_MOVE / CALL_KOIKOI / ROUND_FINISHED đều có thể mang nước đi của đối thủ
+      const hasMove = !!(lastAction && (lastAction.handCard || lastAction.drawnCard));
+
+      // Chờ hiệu ứng cục bộ đang chạy xong (tối đa 12s) rồi mới diễn nước đi của đối thủ
+      if (hasMove || lastAction?.yakuReveal) {
         const waitStart = Date.now();
-        while (this.isAnimating && Date.now() - waitStart < 4000) {
+        while (
+          (this.isAnimating || this.yakuRevealActive) &&
+          Date.now() - waitStart < 12000
+        ) {
           await new Promise((r) => setTimeout(r, 50));
         }
         if (!this.isMultiplayerMatch()) return;
       }
 
       // Animate remote opponent's played and drawn cards if provided (skip visual flight while viewing captured panel)
-      if (
-        lastAction &&
-        lastAction.type === 'TURN_MOVE' &&
-        !this.isAnimating &&
-        this.activeModal !== 'captured_view'
-      ) {
+      if (hasMove && this.activeModal !== 'captured_view') {
         await this.animateRemoteOpponentAction(lastAction);
-      } else if (lastAction && lastAction.type === 'CALL_KOIKOI') {
+      }
+
+      // Đối thủ vừa ăn bộ: phát hiệu ứng yaku bản ngắn như khi AI ăn
+      if (lastAction?.yakuReveal?.evalResult?.yakus?.length) {
+        this.isAnimating = true;
+        try {
+          await this.showYakuReveal(lastAction.yakuReveal, 'ai');
+        } catch {
+          // Bỏ qua lỗi hiệu ứng
+        } finally {
+          this.isAnimating = false;
+        }
+        if (!this.isMultiplayerMatch()) return;
+      }
+
+      if (lastAction && lastAction.type === 'CALL_KOIKOI') {
         this.triggerAnimeCutin(
           this.getOpponentDisplayName(),
           this.currentOpponent.avatar,
@@ -2759,6 +2775,13 @@ class HanaKoiApp {
     const isMp = this.isMultiplayerMatch();
 
     if (yCheck?.newYaku) {
+      // PvP: gửi kèm bộ vừa ăn để máy đối thủ cũng phát hiệu ứng yaku
+      if (isMp && this.pendingMpMoveAction) {
+        this.pendingMpMoveAction.yakuReveal = {
+          evalResult: { yakus: yCheck.evalResult?.yakus || [] },
+          prevSignature: yCheck.prevSignature || ''
+        };
+      }
       await this.safeAnimate(() => this.showYakuReveal(yCheck, 'player'));
       this.triggerOpponentTeaseLine(true);
       if (yCheck.autoShobu) {
@@ -2805,7 +2828,7 @@ class HanaKoiApp {
     try {
       await playYakuReveal(fresh.length ? fresh : evalRes.yakus, {
         short: isAi,
-        actorName: isAi ? this.currentOpponent?.name : '',
+        actorName: isAi ? this.getOpponentDisplayName() : '',
         skinId: this.saveData.equippedSkin,
         durationMs: cardAnimator.scaleMs(isAi ? 2000 : 2800),
         onShow: (yaku) => {
@@ -3603,7 +3626,10 @@ class HanaKoiApp {
       );
       if (this.isMultiplayerMatch()) {
         const canonical = this.engine.exportCanonicalState(multiplayerService.role, null);
-        multiplayerService.syncRoomState(canonical, { type: 'CALL_KOIKOI' });
+        multiplayerService.syncRoomState(canonical, {
+          ...(this.pendingMpMoveAction || {}),
+          type: 'CALL_KOIKOI'
+        });
         this.pendingMpMoveAction = null;
         this.renderAll();
         return;

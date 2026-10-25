@@ -627,7 +627,7 @@ export class MultiplayerService {
       } catch {
         // Offline / static fallback uses BroadcastChannel
       }
-    }, 950);
+    }, 500);
   }
 
   stopRoomPolling() {
