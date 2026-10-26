@@ -1462,6 +1462,12 @@ body.layout-compact .tt-kk .tt-body {
   gap: 8px !important;
   padding: 8px 16px 12px !important;
 }
+/* Footer không định vị để .kk-actions vẫn bám 2 góc dưới theo .kk-backdrop */
+body.layout-compact .tt-kk .tt-foot {
+  position: static !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
 body.layout-compact .tt-kk .tt-card {
   padding: 6px 14px !important;
 }

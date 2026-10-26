@@ -499,18 +499,21 @@ async function buildBackRaster(back, w) {
   const dh = ih * k;
   ctx.drawImage(img, 2 + (156 - dw) / 2, 2 + (244 - dh) / 2, dw, dh);
   // Hoa văn sóng: pattern 24x14 = các nửa vòng tròn r=12, tâm mỗi 12px trên đường y=14k
-  ctx.globalAlpha = 0.16;
-  ctx.strokeStyle = back.accentColor;
-  ctx.lineWidth = 0.7;
-  ctx.beginPath();
-  for (let y = 14; y <= CARD_VB_H + 14; y += 14) {
-    for (let cx = 0; cx <= CARD_VB_W + 12; cx += 12) {
-      ctx.moveTo(cx - 12, y);
-      ctx.arc(cx, y, 12, Math.PI, 2 * Math.PI);
+  // (bỏ qua với mặt lưng có hoa văn in chìm riêng — back.noWagara)
+  if (!back.noWagara) {
+    ctx.globalAlpha = 0.16;
+    ctx.strokeStyle = back.accentColor;
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    for (let y = 14; y <= CARD_VB_H + 14; y += 14) {
+      for (let cx = 0; cx <= CARD_VB_W + 12; cx += 12) {
+        ctx.moveTo(cx - 12, y);
+        ctx.arc(cx, y, 12, Math.PI, 2 * Math.PI);
+      }
     }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
-  ctx.stroke();
-  ctx.globalAlpha = 1;
   ctx.restore();
 
   // Viền trong
@@ -700,7 +703,7 @@ function renderCardBackVector(backId = 'back_urushi_red', rasterKeyAttr = '') {
         preserveAspectRatio="xMidYMid slice"
       />
       <!-- Subtle Japanese Wagara Seigaiha Pattern Overlay -->
-      <rect x="2" y="2" width="156" height="244" fill="url(#wagara_${uid})" />
+      ${back.noWagara ? '' : `<rect x="2" y="2" width="156" height="244" fill="url(#wagara_${uid})" />`}
     </g>
     <rect x="5" y="5" width="150" height="238" rx="6" fill="none" stroke="${back.accentColor}" stroke-width="0.9" stroke-opacity="0.55" />
   </svg>`;

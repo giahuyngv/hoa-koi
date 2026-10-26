@@ -118,6 +118,10 @@ class SoundEngine {
     this.bgmSourceNode = null;
     this.bgmHtmlAudio = null;
     this.bgmRequestToken = 0;
+    // Tạm dừng BGM trong lúc phát SFX Yaku (nhớ vị trí để phát tiếp)
+    this.bgmSfxPause = null;
+    this.bgmSourceStartedAt = 0;
+    this.bgmSourceOffset = 0;
 
     // Web Audio decoded buffers & raw ArrayBuffers cho 9 tiếng CC0 (Nhóm 1 + Nhóm 2)
     this.sfxRawBuffers = {};
@@ -314,6 +318,7 @@ class SoundEngine {
 
   // Tắt dần bus BGM hiện tại rồi ngắt hẳn, tạo bus mới (dùng khi đổi bài)
   replaceBgmBus() {
+    this._cancelBgmSfxPause();
     this.bgmRequestToken++;
     this._stopCurrentBgmNodes(0);
     const ctx = this.ensureContext();
@@ -530,6 +535,7 @@ class SoundEngine {
 
   startBgm() {
     if (!this.bgmEnabled) return;
+    if (this.bgmSfxPause) return;
     const ctx = this.ensureContext();
     if (!ctx) return;
 
@@ -591,7 +597,10 @@ class SoundEngine {
       this.bgmMasterGain.gain.linearRampToValueAtTime(this.bgmVolume, now + 1.1);
 
       try {
-        src.start(0, meta ? meta.loopStart : 0);
+        const startOffset = meta ? meta.loopStart : 0;
+        src.start(0, startOffset);
+        this.bgmSourceStartedAt = liveCtx.currentTime;
+        this.bgmSourceOffset = startOffset;
         this.bgmSourceNode = src;
         this.bgmPlaying = true;
       } catch {
@@ -607,6 +616,7 @@ class SoundEngine {
   }
 
   stopBgm() {
+    this._cancelBgmSfxPause();
     this.bgmRequestToken++;
     this.bgmPlaying = false;
     if (this.bgmHtmlAudio) {
@@ -640,6 +650,128 @@ class SoundEngine {
     }
   }
 
+
+  // Vị trí đang phát (giây) của BGM Web Audio, tính cả vòng lặp loopStart..loopEnd
+  _currentBgmPosition() {
+    const src = this.bgmSourceNode;
+    if (!src || !src.buffer || !this.ctx) return 0;
+    let pos = this.bgmSourceOffset + Math.max(0, this.ctx.currentTime - this.bgmSourceStartedAt);
+    const loopStart = src.loopStart || 0;
+    const loopEnd = src.loopEnd > loopStart ? src.loopEnd : src.buffer.duration;
+    const loopLen = loopEnd - loopStart;
+    if (pos >= loopEnd && loopLen > 0) {
+      pos = loopStart + ((pos - loopStart) % loopLen);
+    }
+    return pos;
+  }
+
+  /**
+   * Tạm dừng BGM trong `holdSec` giây để nghe rõ SFX (ăn Yaku), rồi phát tiếp từ chỗ cũ.
+   * Gọi chồng nhiều lần (nhiều bộ liên tiếp) chỉ kéo dài thời gian dừng.
+   */
+  pauseBgmForSfx(holdSec = 3) {
+    if (!this.bgmEnabled || !this.sfxEnabled || !this.ctx) return;
+    const holdMs = Math.max(0.3, holdSec) * 1000;
+
+    if (this.bgmSfxPause) {
+      const p = this.bgmSfxPause;
+      const resumeAt = Date.now() + holdMs;
+      if (resumeAt > p.resumeAt) {
+        clearTimeout(p.timer);
+        p.resumeAt = resumeAt;
+        p.timer = setTimeout(() => this._resumeBgmAfterSfx(), holdMs);
+      }
+      return;
+    }
+
+    const ctx = this.ctx;
+    const pause = { resumeAt: Date.now() + holdMs, timer: null, kind: null, position: 0, buffer: null, loopStart: 0, loopEnd: 0 };
+
+    if (this.bgmHtmlAudio && !this.bgmHtmlAudio.paused) {
+      pause.kind = 'html';
+      pause.audio = this.bgmHtmlAudio;
+      try { this.bgmHtmlAudio.pause(); } catch { /* Ignore */ }
+    } else if (this.bgmSourceNode && this.bgmMasterGain) {
+      const src = this.bgmSourceNode;
+      pause.kind = 'buffer';
+      pause.buffer = src.buffer;
+      pause.loopStart = src.loopStart;
+      pause.loopEnd = src.loopEnd;
+      const fade = 0.15;
+      pause.position = this._currentBgmPosition() + fade;
+      this.bgmSourceNode = null;
+      const now = ctx.currentTime;
+      this.bgmMasterGain.gain.cancelScheduledValues(now);
+      this.bgmMasterGain.gain.setValueAtTime(this.bgmMasterGain.gain.value, now);
+      this.bgmMasterGain.gain.linearRampToValueAtTime(0.0001, now + fade);
+      try {
+        src.onended = null;
+        src.stop(now + fade + 0.02);
+      } catch { /* Ignore */ }
+      setTimeout(() => {
+        try { src.disconnect(); } catch { /* Ignore */ }
+      }, (fade + 0.1) * 1000);
+    } else {
+      // BGM chưa phát (đang tải) → không cần dừng
+      return;
+    }
+
+    pause.timer = setTimeout(() => this._resumeBgmAfterSfx(), holdMs);
+    this.bgmSfxPause = pause;
+  }
+
+  _cancelBgmSfxPause() {
+    if (!this.bgmSfxPause) return;
+    clearTimeout(this.bgmSfxPause.timer);
+    this.bgmSfxPause = null;
+  }
+
+  _resumeBgmAfterSfx() {
+    const pause = this.bgmSfxPause;
+    this.bgmSfxPause = null;
+    if (!pause || !this.bgmEnabled) return;
+
+    if (pause.kind === 'html') {
+      if (this.bgmHtmlAudio === pause.audio) {
+        const playPromise = pause.audio.play();
+        if (playPromise && typeof playPromise.catch === 'function') playPromise.catch(() => {});
+      } else {
+        this.startBgm();
+      }
+      return;
+    }
+
+    const ctx = this.ensureContext(true);
+    if (!ctx || !pause.buffer || !this.bgmMasterGain || this.bgmSourceNode) {
+      this.startBgm();
+      return;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = pause.buffer;
+    src.loop = true;
+    if (pause.loopEnd > pause.loopStart) {
+      src.loopStart = pause.loopStart;
+      src.loopEnd = pause.loopEnd;
+    }
+    src.connect(this.bgmMasterGain);
+    let offset = pause.position;
+    const loopEnd = pause.loopEnd > pause.loopStart ? pause.loopEnd : pause.buffer.duration;
+    if (offset >= loopEnd) offset = pause.loopStart || 0;
+
+    const now = ctx.currentTime;
+    this.bgmMasterGain.gain.cancelScheduledValues(now);
+    this.bgmMasterGain.gain.setValueAtTime(0.0001, now);
+    this.bgmMasterGain.gain.linearRampToValueAtTime(this.bgmVolume, now + 0.8);
+    try {
+      src.start(0, offset);
+      this.bgmSourceStartedAt = now;
+      this.bgmSourceOffset = offset;
+      this.bgmSourceNode = src;
+      this.bgmPlaying = true;
+    } catch {
+      this.restartBgmLoop();
+    }
+  }
 
   // ==========================================================================
   // GAMEPLAY SOUND EFFECTS (SFX) — 100% FILE GHI ÂM THẬT CC0 (NHÓM 1 + NHÓM 2)
@@ -823,7 +955,7 @@ class SoundEngine {
     return yakuOrTier === true ? 'yaku_hikari' : 'yaku_tane';
   }
 
-  playYakuKotoGlissando(yakuOrTier = false) {
+  playYakuKotoGlissando(yakuOrTier = false, { pauseBgm = false } = {}) {
     const key = this.resolveYakuSfxKey(yakuOrTier);
     const volMap = {
       yaku_kasu: 0.80,
@@ -832,6 +964,11 @@ class SoundEngine {
       yaku_hikari: 0.94
     };
     this.playCardBuffer(key, { volume: volMap[key] || 0.88, rate: 1.0 });
+    if (pauseBgm) {
+      // Dừng nhạc nền đúng bằng độ dài tiếng Koto (+ chút ngân), rồi phát tiếp
+      const buf = this.sfxBuffers[key];
+      this.pauseBgmForSfx(buf ? buf.duration + 0.3 : 3);
+    }
   }
 
   /**

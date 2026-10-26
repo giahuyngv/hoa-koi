@@ -28,6 +28,7 @@ import { soundEngine, BGM_TRACKS } from './audio/soundEngine.js?v=25';
 import { KoiKoiEngine, compareDealerCards } from './engine/koiKoiEngine.js?v=25';
 import { multiplayerService } from './services/multiplayerService.js?v=25';
 import { initViewportScaler, isPerfLow, getPerfModePref, setPerfMode } from './ui/viewportScaler.js?v=26';
+import { StoryController, getStoryPlayerAvatar, storyAvatarHTML } from './story/storyMode.js?v=1';
 
 const STORAGE_KEY = 'hanakoi_25d_save_v1';
 const THEME_STORAGE_KEY = 'hanakoi_theme_mode';
@@ -234,9 +235,51 @@ class HanaKoiApp {
 
     this.bindMultiplayerEvents();
     this.bindAutoStartAudio();
-    this.startMatchWithOpponent(this.currentOpponent.id, this.saveData.matchRounds || 3);
-    this.checkUrlMultiplayerParams();
-    this.maybeShowFirstTutorial();
+    this.story = new StoryController(this);
+    // Link vào phòng PvP thì vào thẳng bàn chơi; còn lại mở Màn chính (bàn chơi chia sẵn phía sau, chưa chạy mở hiệp)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('joinRoom') || urlParams.get('autoPvp') === '1') {
+      this.startMatchWithOpponent(this.currentOpponent.id, this.saveData.matchRounds || 3);
+      this.checkUrlMultiplayerParams();
+      this.maybeShowFirstTutorial();
+    } else {
+      this.engine.startNewMatch(this.saveData.matchRounds || 3);
+      this.renderAll();
+      this.story.showHome();
+    }
+  }
+
+  /** Từ Màn chính: 'pve' mở bảng Chọn đối thủ, 'pvp' mở Ghép trận, 'custom' mở Phòng mã (đều trên trận đấu máy mới). */
+  enterModeFromHome(mode) {
+    this.story.match = null;
+    // Chia sẵn trận đấu máy nhưng chưa mở hiệp (bốc bài chọn người đi trước nằm trên mọi modal):
+    // chọn đối thủ / vào phòng PvP sẽ tự mở hiệp; đóng bảng mà không chọn thì mở hiệp với đối thủ hiện tại.
+    multiplayerService.leaveCurrentRoom();
+    this.gameMode = 'pve';
+    this.bumpMatchToken();
+    this.engine.startNewMatch(this.saveData.matchRounds || 3);
+    this._openingPending = true;
+    // Lần đầu đấu máy: hướng dẫn của Ayame trước (giống lúc mở game trước đây)
+    this.activeModal = mode === 'pve' && !this.saveData.tutorialSeen ? null : mode === 'pvp' ? 'pvp_lobby' : mode === 'custom' ? 'custom_room' : 'opponents';
+    this.renderAll();
+    if (!this.activeModal) this.maybeShowFirstTutorial();
+  }
+
+  // Về Màn chính giữa trận: bỏ trận cốt truyện đang dở (trận đấu máy vẫn để nguyên phía sau)
+  goHome() {
+    this.story.match = null;
+    // Dừng trình tự mở hiệp đang dở (bốc bài chọn người đi trước / chữ tháng / chia bài)
+    this._openingSeqId = (this._openingSeqId || 0) + 1;
+    document.querySelectorAll('.dealer-draw-overlay').forEach((n) => n.remove());
+    const introRoot = document.getElementById('month-intro-root');
+    if (introRoot) introRoot.replaceChildren();
+    this.revealAllRoundCards();
+    this.isAnimating = false;
+    this.settingsMenuOpen = false;
+    this.activeModal = null;
+    this.renderActiveModal();
+    this.renderTopNav();
+    this.story.showHome();
   }
 
   /** Cài đặt tiểu cảnh: 'random' (mặc định, mỗi trận ngẫu nhiên) | '1' | '9' (cố định 1 tháng) | 'off' (tắt) */
@@ -732,6 +775,9 @@ class HanaKoiApp {
         <aside class="right-sidebar-panel" id="right-panel"></aside>
       </main>
 
+      <!-- Màn chính + Cốt truyện (lớp phủ, dưới modal) -->
+      <div id="story-root" hidden></div>
+
       <!-- Modal & Cut-in Containers -->
       <div id="modal-root"></div>
       <div id="cutin-root"></div>
@@ -843,12 +889,16 @@ class HanaKoiApp {
     this.renderActiveModal();
   }
 
-  startMatchWithOpponent(opponentId, rounds = 3) {
+  // opts.story: trận cốt truyện → không ghi đè đối thủ / số hiệp đã chọn cho chế độ Đấu máy
+  startMatchWithOpponent(opponentId, rounds = 3, opts = {}) {
     multiplayerService.leaveCurrentRoom();
     this.gameMode = 'pve';
+    if (this.story) this.story.onMatchStarted(opponentId, !!opts.story);
     this.currentOpponent = getOpponentById(opponentId);
-    this.saveData.selectedOpponentId = this.currentOpponent.id;
-    this.saveData.matchRounds = rounds;
+    if (!opts.story) {
+      this.saveData.selectedOpponentId = this.currentOpponent.id;
+      this.saveData.matchRounds = rounds;
+    }
     this.persistSave();
 
     this.rollNewTableFlowerMonth();
@@ -877,6 +927,7 @@ class HanaKoiApp {
    * - Bước 2: Chia 24 lá bài tuần tự từng lá một từ cọc bài #draw-pile-stack ~2s
    */
   async runRoundOpeningSequence() {
+    this._openingPending = false;
     const seqId = (this._openingSeqId = (this._openingSeqId || 0) + 1);
     const introRoot = document.getElementById('month-intro-root');
     if (introRoot) introRoot.replaceChildren();
@@ -1535,20 +1586,25 @@ class HanaKoiApp {
     const totalCollectibles = CARD_BACKS.length + CARD_SKINS.length;
     const currentTrack = soundEngine.getCurrentTrack();
     const isMp = this.isMultiplayerMatch();
+    const isStory = !!(this.story && this.story.isStoryMatch());
     const cd = this.getCompactHeaderData();
 
     const navChanged = setElementMarkupIfChanged(nav, `
       <!-- Left: 3 Game Modes Scroll Switcher -->
       <div class="mode-switcher-group okami-scroll-bar">
-        <button class="mode-pill-btn ${this.gameMode === 'pve' ? 'active-mode' : ''}" id="btn-mode-pve" title="Chế độ 1: Đấu với 12 Kỳ Thủ Nhật Bản (PvE)">
-          <span class="hanko-mini">対</span> Đấu Máy (12 Tháng)
+        <button class="mode-pill-btn" id="btn-go-home" title="Về Màn chính (chọn chế độ, Cốt truyện)">
+          <span class="hanko-mini">家</span> Màn chính
         </button>
-        <button class="mode-pill-btn ${this.gameMode === 'pvp' ? 'active-mode' : ''}" id="btn-mode-pvp" title="Chế độ 2: Ghép trận người thật trực tuyến (PvP Online)">
-          <span class="hanko-mini">戦</span> Ghép Trận
-        </button>
-        <button class="mode-pill-btn ${this.gameMode === 'custom' ? 'active-mode' : ''}" id="btn-mode-custom" title="Chế độ 3: Tạo phòng mã số để mở 2 tab chơi thử (Custom Room)">
-          <span class="hanko-mini">室</span> Phòng Mã
-        </button>
+        ${
+          // Ghép trận / Phòng mã chỉ vào từ Màn chính; đang chơi cốt truyện thì nút này ghi "Cốt truyện"
+          isStory
+            ? `<button class="mode-pill-btn active-mode" id="btn-mode-story" title="Trận cốt truyện · bấm để về bản đồ 4 mùa">
+                <span class="hanko-mini">旅</span> Cốt truyện
+              </button>`
+            : `<button class="mode-pill-btn ${this.gameMode === 'pve' ? 'active-mode' : ''}" id="btn-mode-pve" title="Chế độ 1: Đấu với 12 Kỳ Thủ Nhật Bản (PvE)">
+                <span class="hanko-mini">対</span> Đấu Máy (12 Tháng)
+              </button>`
+        }
         ${
           isMp
             ? `<span class="live-room-pill" id="btn-live-room-info" title="Đang kết nối trực tiếp phòng #${multiplayerService.roomCode}">
@@ -1588,18 +1644,21 @@ class HanaKoiApp {
             <div class="hk-compact-only hk-dropdown-lobby-section">
               <div class="hk-dropdown-section-title">SẢNH & CHẾ ĐỘ CHƠI</div>
               <div class="hk-dropdown-grid">
-                <button class="dropdown-item-btn ${this.gameMode === 'pve' ? 'is-active-mode' : ''}" id="btn-compact-mode-pve">
-                  <span>⚔️ Đấu Máy</span>
-                  <span class="item-sub">12 Kỳ Thủ</span>
+                <button class="dropdown-item-btn" id="btn-compact-home">
+                  <span>🏠 Màn chính</span>
+                  <span class="item-sub">Cốt truyện · chế độ</span>
                 </button>
-                <button class="dropdown-item-btn ${this.gameMode === 'pvp' ? 'is-active-mode' : ''}" id="btn-compact-mode-pvp">
-                  <span>🌐 Ghép Trận</span>
-                  <span class="item-sub">PvP Online</span>
-                </button>
-                <button class="dropdown-item-btn ${this.gameMode === 'custom' ? 'is-active-mode' : ''}" id="btn-compact-mode-custom">
-                  <span>🔑 Phòng Mã</span>
-                  <span class="item-sub">${isMp ? '#' + multiplayerService.roomCode : 'Tạo/Vào'}</span>
-                </button>
+                ${
+                  isStory
+                    ? `<button class="dropdown-item-btn is-active-mode" id="btn-compact-mode-story">
+                        <span>旅 Cốt Truyện</span>
+                        <span class="item-sub">Bản đồ 4 mùa</span>
+                      </button>`
+                    : `<button class="dropdown-item-btn ${this.gameMode === 'pve' ? 'is-active-mode' : ''}" id="btn-compact-mode-pve">
+                        <span>⚔️ Đấu Máy</span>
+                        <span class="item-sub">12 Kỳ Thủ</span>
+                      </button>`
+                }
                 <button class="dropdown-item-btn" id="btn-compact-collection">
                   <span>🎴 Sưu Tập</span>
                   <span class="item-sub">${totalOwned}/${totalCollectibles}</span>
@@ -1713,8 +1772,9 @@ class HanaKoiApp {
 
         <div class="hk-compact-header-right">
           <div class="hk-compact-player-chip ${cd.isPlayerTurn ? 'is-turn' : ''}" id="hk-compact-player-chip">
+            ${storyAvatarHTML(this.saveData, 30)}
             <div class="hk-compact-player-meta">
-              <span class="hk-compact-player-name">Bạn</span>
+              <span class="hk-compact-player-name">${getStoryPlayerAvatar(this.saveData).name.replace(/[<>&"]/g, '')}</span>
               <span class="hk-compact-player-sub" id="hk-compact-player-sub">${cd.isPlayerTurn ? 'Lượt của bạn' : 'Lượt đối thủ'}</span>
             </div>
             <span class="hk-compact-score player-score" id="hk-compact-player-score">${this.engine.playerScore}${this.engine.playerCalledKoiKoi ? '🔥' : ''}</span>
@@ -1737,24 +1797,16 @@ class HanaKoiApp {
       if (el) el.onclick = fn;
     };
 
-    nav.querySelector('#btn-mode-pve').onclick = () => {
+    bindClick('#btn-go-home', () => this.goHome());
+    bindClick('#btn-compact-home', () => this.goHome());
+    bindClick('#btn-mode-story', () => this.story.leaveMatchToMap());
+    bindClick('#btn-compact-mode-story', () => this.story.leaveMatchToMap());
+    bindClick('#btn-mode-pve', () => {
       this.settingsMenuOpen = false;
       this.activeModal = 'opponents';
       this.renderTopNav();
       this.renderActiveModal();
-    };
-    nav.querySelector('#btn-mode-pvp').onclick = () => {
-      this.settingsMenuOpen = false;
-      this.activeModal = 'pvp_lobby';
-      this.renderTopNav();
-      this.renderActiveModal();
-    };
-    nav.querySelector('#btn-mode-custom').onclick = () => {
-      this.settingsMenuOpen = false;
-      this.activeModal = 'custom_room';
-      this.renderTopNav();
-      this.renderActiveModal();
-    };
+    });
     const livePill = nav.querySelector('#btn-live-room-info');
     if (livePill) {
       livePill.onclick = () => {
@@ -1808,8 +1860,6 @@ class HanaKoiApp {
       this.renderActiveModal();
     });
     bindClick('#btn-compact-mode-pve', () => nav.querySelector('#btn-mode-pve').click());
-    bindClick('#btn-compact-mode-pvp', () => nav.querySelector('#btn-mode-pvp').click());
-    bindClick('#btn-compact-mode-custom', () => nav.querySelector('#btn-mode-custom').click());
     bindClick('#btn-compact-collection', () => nav.querySelector('#btn-open-collection').click());
     bindClick('#btn-compact-gacha', () => nav.querySelector('#btn-open-gacha').click());
     bindClick('#btn-compact-dark', (e) => {
@@ -1945,8 +1995,8 @@ class HanaKoiApp {
         </div>
 
         <div class="score-vs-grid">
-          <div class="score-box ${isPlayerTurn ? 'active-turn' : ''}">
-            <span class="who-label">Bạn</span>
+          <div class="score-box hk-me-score ${isPlayerTurn ? 'active-turn' : ''}">
+            <span class="who-label">${storyAvatarHTML(this.saveData, 34)}<span class="hk-me-name">${getStoryPlayerAvatar(this.saveData).name.replace(/[<>&"]/g, '')}</span></span>
             <span class="pts-num">${this.engine.playerScore}</span>
             ${this.engine.playerCalledKoiKoi ? '<span class="pts-unit">🔥 Koi</span>' : ''}
           </div>
@@ -2859,7 +2909,7 @@ class HanaKoiApp {
         skinId: this.saveData.equippedSkin,
         durationMs: cardAnimator.scaleMs(isAi ? 2000 : 2800),
         onShow: (yaku) => {
-          soundEngine.playYakuKotoGlissando(yaku);
+          soundEngine.playYakuKotoGlissando(yaku, { pauseBgm: true });
         }
       });
     } finally {
@@ -3259,6 +3309,8 @@ class HanaKoiApp {
       this.pendingMpMoveAction = null;
     }
 
+    if (this.story) this.story.onRoundFinished(outcome);
+
     if (outcome.isMatchComplete) {
       multiplayerService.recordMatchResult({
         mode: this.gameMode,
@@ -3371,6 +3423,11 @@ class HanaKoiApp {
     if (!this.activeModal) {
       delete root.dataset.activeModalKey;
       root.replaceChildren();
+      // Vào Đấu máy / PvP từ Màn chính rồi đóng bảng mà không chọn gì → mở hiệp với đối thủ hiện tại
+      if (this._openingPending && !(this.story && this.story.isOpen())) {
+        this._openingPending = false;
+        this.runRoundOpeningSequence();
+      }
       return;
     }
 
@@ -3571,7 +3628,8 @@ class HanaKoiApp {
    * Khung "Bàn Chiếu" dùng chung cho bảng Koi-Koi/Shōbu và bảng kết quả hiệp:
    * khung sơn mài + nền chiếu cói + 2 mép viền gấm, tiêu đề trên bảng sơn mài. CSS ở nhóm .tt-* / .tt-kk trong main.css.
    */
-  buildScrollModalHTML({ ariaLabel, extraClass = '', kicker = '', title, bodyHtml }) {
+  // footerHtml nằm ngoài .tt-body (vùng cuộn): trên iOS, nút định vị absolute bên trong vùng cuộn tràn bị cắt mất (vẫn bấm được)
+  buildScrollModalHTML({ ariaLabel, extraClass = '', kicker = '', title, bodyHtml, footerHtml = '' }) {
     return `
       <div class="modal-backdrop kk-backdrop ${extraClass}">
         <div class="tt-panel tt-kk" role="dialog" aria-label="${ariaLabel.replace(/<[^>]*>/g, '')}">
@@ -3580,6 +3638,7 @@ class HanaKoiApp {
             <h2 class="tt-title">${title}</h2>
           </div>
           <div class="tt-body">${bodyHtml}</div>
+          ${footerHtml ? `<div class="tt-foot">${footerHtml}</div>` : ''}
         </div>
       </div>
     `;
@@ -3618,7 +3677,8 @@ class HanaKoiApp {
           <div class="kk-total">
             Tổng Điểm Nếu Dừng (Shōbu): <strong>${totalNow} Điểm</strong>${mult > 1 ? ` <em>(Nhân ×${mult}!)</em>` : ''}
           </div>
-        </div>
+        </div>`,
+      footerHtml: `
         <div class="kk-actions">
           <button class="tt-dbtn is-dark" id="btn-choose-shobu">
             <span class="kk-btn-main">SHŌBU! <span lang="ja">(勝負)</span></span>
@@ -3645,11 +3705,16 @@ class HanaKoiApp {
         this.currentOpponent.dialogues.playerCallKoiKoi
       );
       this.engine.declareKoiKoi('player');
+      // Pop-up Koi-Koi của người chơi: avatar lữ khách, cùng chữ + bố cục với pop-up của đối thủ
+      const me = getStoryPlayerAvatar(this.saveData);
       this.triggerAnimeCutin(
-        'KỲ THỦ (BẠN)',
-        this.currentOpponent.avatar,
+        me.name,
+        me.img,
         'KOI-KOI! (こいこい)',
-        'Bạn tuyên bố tiếp tục ván bài để săn tổ hợp lớn!'
+        `${me.name} tuyên bố cược tiếp để nhân đôi điểm!`,
+        me.koikoi,
+        me.koikoiScale,
+        me.koikoiDrop
       );
       if (this.isMultiplayerMatch()) {
         const canonical = this.engine.exportCanonicalState(multiplayerService.role, null);
@@ -3712,15 +3777,27 @@ class HanaKoiApp {
     // PvP: chỉ chủ phòng chia bài; khách đã bấm thì khoá nút và hiện đang chờ
     const waitHost = this.isGuestWaitingHost();
     const waitAttr = waitHost ? ' disabled aria-busy="true"' : '';
-    const actionsHtml = isMatchEnd
+    const storyEnd = isMatchEnd && this.story && this.story.isStoryMatch();
+    const matchResultHtml = isMatchEnd
       ? `<div class="kk-match-result ${playerWonMatch ? 'is-win' : 'is-lose'}">
           ${
-            playerWonMatch
+            storyEnd
+              ? playerWonMatch ? `👑 Bạn đã thắng ${oppDisplayName}!` : `🌸 ${oppDisplayName} thắng trận này.`
+              : playerWonMatch
               ? `👑 Chúc mừng! Bạn đã chiến thắng ${oppDisplayName} chung cuộc!`
               : `🌸 ${oppDisplayName} giành chiến thắng chung cuộc sau ${s.totalRounds} tháng. Hãy tái đấu nhé!`
           }
-        </div>
-        <div class="kk-actions">
+        </div>`
+      : '';
+    const actionsHtml = storyEnd
+      ? `<div class="kk-actions is-single">
+          <button class="tt-dbtn is-red is-glow" id="btn-story-reward">
+            <span class="kk-btn-main">${playerWonMatch ? 'Nhận phần thưởng' : 'Xem kết quả'}</span>
+            <span class="kk-btn-sub">Hành trình 12 tháng</span>
+          </button>
+        </div>`
+      : isMatchEnd
+      ? `<div class="kk-actions">
           <button class="tt-dbtn is-red is-glow" id="btn-play-again"${waitAttr}>
             <span class="kk-btn-main">Tái Đấu</span>
             <span class="kk-btn-sub">${waitHost ? 'Đang chờ chủ phòng…' : `Đấu lại với ${oppShortName}`}</span>
@@ -3760,7 +3837,8 @@ class HanaKoiApp {
           ${s.matchBonusCoins ? ` · 🏆 Thưởng Chung Cuộc: <strong>+${s.matchBonusCoins} Xu Hoa</strong>` : ''}
         </div>
         ${unlockHtml}
-        ${actionsHtml}`
+        ${matchResultHtml}`,
+      footerHtml: actionsHtml
     });
   }
 
@@ -3809,6 +3887,8 @@ class HanaKoiApp {
         }
       };
     }
+    const storyBtn = root.querySelector('#btn-story-reward');
+    if (storyBtn) storyBtn.onclick = () => this.story.finishMatch();
     const newOppBtn = root.querySelector('#btn-pick-new-opp');
     if (newOppBtn) {
       newOppBtn.onclick = () => {

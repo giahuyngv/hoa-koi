@@ -34,6 +34,8 @@ const files = [
   'src/engine/koiKoiEngine.js',
   'src/services/multiplayerService.js',
   'src/ui/viewportScaler.js',
+  'src/data/storyData.js',
+  'src/story/storyMode.js',
   'src/main.js'
 ];
 

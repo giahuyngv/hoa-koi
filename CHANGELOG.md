@@ -11,14 +11,21 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 
 ## [Chưa phát hành]
 ### Thêm
+- Màn chính khi mở game (sau loading): logo 花恋 HOA KOI và 4 ô Cốt truyện / Đấu máy / PvP / Cài đặt; nút "Màn chính" trên thanh trên và menu ≡ để quay lại.
+- Chế độ Cốt truyện "Hành trình 12 tháng" (chương Xuân, tháng 1–3): Ayame dẫn truyện, tạo lữ khách (4 chân dung + 6 gia huy + màu nền), bản đồ 4 mùa, hội thoại trước/sau trận, thử thách tháng, trận Koi-Koi thật với AI chủ tháng; sao (thắng / thử thách / cách biệt ≥5) đổi thành lượt bốc lá của tháng, lá trùng thành mảnh hoa, đủ 4 lá mở avatar chủ tháng. Lưu ở `saveData.storyProgress`.
+- Màn chính: ô PvP = Ghép trận nhanh, ô dưới phải = Phòng mã, Cài đặt là nút nhỏ ở góc trên phải cạnh chip lữ khách; trong trận bỏ 2 nút Ghép Trận / Phòng Mã ở góc trên (chỉ vào từ Màn chính); trận cốt truyện thì nút góc trái ghi "Cốt truyện" (bấm để về bản đồ).
+- Avatar lữ khách hiện ở ô điểm "Bạn" khi đấu máy; pop-up Koi-Koi của người chơi dùng ảnh riêng của lữ khách, cùng chữ và bố cục với pop-up của đối thủ.
 - Sưu tầm: 5 skin mặt bài (Anh Đào Pastel, Thủy Mặc Sumi-e, Sơn Mài Hoàng Kim, Bách Quỷ Dạ Hành, Phù Thế Ánh Trăng) có bộ 48 lá vẽ riêng ở `public/assets/cards/<skin>/`, viền gốc được cắt và phủ khung chung theo từng skin; trận đấu và Sưu tầm tự dùng ảnh của skin đang chọn (Truyền Thống Edo giữ ảnh cũ).
 - Bảng quyết định Koi-Koi/Shōbu có tiếng mở bảng (giấy lật trầm + phách gỗ nhẹ).
+- Mặt lưng mới "Lá Gai Đêm (Asanoha Kuro)" (SR, 800 xu, cửa hàng/gacha): sơn mài đen, hoa văn lá gai Asanoha in nổi; mặt lưng này không phủ lớp sóng mờ (`noWagara`).
 ### Thay đổi
+- Khi ăn Yaku (cả người chơi và đối thủ), nhạc nền tạm dừng đúng lúc tiếng Koto của bộ vang lên rồi phát tiếp từ chỗ cũ (chỉ khi đang bật cả nhạc nền và hiệu ứng).
 - Menu ⚙: mục Tiểu cảnh bàn chỉ ghi "Tháng N" (hoặc "Ngẫu nhiên · Tháng N"); menu tự giãn ngang theo chữ, không xuống dòng.
 - Bảng Luật chơi & Yaku dùng khung "Bàn Chiếu" như các panel khác: viền sơn mài, nền chiếu, header chữ vàng, mục tiêu đề trên dải sơn mài, mỗi Yaku là một thẻ washi với nhãn điểm sơn mài; nút hướng dẫn đỏ son.
 - Kết quả rút quẻ: thẻ đáp án thu nhỏ, 5 thẻ của lượt Rút 5 Quẻ nằm vừa một hàng (kèm tên và nhãn Mới/Trùng); trên điện thoại thẻ nhỏ hơn nữa.
 - Bảng kết quả tháng/chung cuộc: khung điểm "Tổng Điểm Bạn VS đối thủ" dùng nền washi be giống thẻ ghi chú phía trên.
 ### Sửa lỗi
+- Điện thoại (iPhone): nút "Sang tháng …" trên bảng kết quả hiệp không hiện (vẫn bấm được ở góc dưới phải) khi bảng có nhiều Yaku; hàng nút của bảng kết quả và bảng Koi-Koi/Shōbu nay nằm ngoài vùng cuộn nên luôn hiển thị.
 - PvP: máy đối thủ thấy animation đánh/bốc bài cả ở nước ăn bộ (Koi-Koi/Shōbu) và thấy hiệu ứng yaku; nước đi không còn bị bỏ qua khi đang chạy hiệu ứng; hỏi server mỗi 0,5s. Ăn yaku là gửi ngay cho đối thủ (không chờ chọn Koi-Koi/Shōbu), đối thủ thấy dòng "đang cân nhắc". Lá đánh/lật ra mà không ăn cũng có animation bay xuống chiếu ở máy đối thủ.
 - Ảnh ống Rút 5 Quẻ còn sót mảng nền trắng giữa dây tua và thân ống, nay đã xóa sạch.
 - Ảnh thông (thong_dung_cao) tiểu cảnh tháng 1 thay mới nhưng bản deploy vẫn hiện ảnh cũ: URL ảnh month1 giữ `?v=1` nên trình duyệt dùng bản cache 1 năm; tăng lên `?v=2`.

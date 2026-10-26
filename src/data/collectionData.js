@@ -148,6 +148,21 @@ export const CARD_BACKS = [
     borderColor: '#c77dff',
     accentColor: '#e0aaff',
     patternType: 'wisteria_night'
+  },
+  {
+    id: 'back_asanoha_kuro',
+    name: 'Lá Gai Đêm (Asanoha Kuro)',
+    jpName: '黒漆麻の葉',
+    rarity: 'epic',
+    price: 800,
+    unlockedByDefault: false,
+    bossUnlockId: null,
+    description: 'Sơn mài đen tuyền với hoa văn lá gai Asanoha in nổi tinh tế, chỉ hiện lên khi ánh sáng lướt qua mặt bài.',
+    bgGradient: 'linear-gradient(145deg, #1c1a1f 0%, #0b0a0c 100%)',
+    borderColor: '#0b0a0c',
+    accentColor: '#6b6570',
+    patternType: 'asanoha_kuro',
+    noWagara: true
   }
 ];
 
