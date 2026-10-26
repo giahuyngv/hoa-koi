@@ -103,7 +103,19 @@ function faceJob(card, skin, showBadges, w, key) {
   return { key, w, cls: faceClass(skin.id), build: () => buildRaster({ card, skin, showBadges, w }) };
 }
 
-function cardImgHref(cardId) {
+// Skin có bộ mặt bài vẽ riêng (48 lá, khung đã phủ sẵn) → public/assets/cards/<thư mục>/card_N.webp
+const SKIN_ART_DIR = {
+  skin_sakura_pastel: 'sakura_pastel',
+  skin_sumie_ink: 'sumie_ink',
+  skin_kintsugi_gold: 'kintsugi_gold',
+  skin_yokai_night: 'yokai_night',
+  skin_ukiyoe_neon: 'ukiyoe_celestial'
+};
+const SKIN_ART_V = '?v=1';
+
+function cardImgHref(cardId, skinId) {
+  const dir = SKIN_ART_DIR[skinId];
+  if (dir) return `./public/assets/cards/${dir}/card_${cardId}.webp${SKIN_ART_V}`;
   return `./public/assets/cards/card_${cardId}.webp?v=26`;
 }
 
@@ -405,7 +417,8 @@ function drawBadges(ctx, card, p) {
 
 async function buildRaster({ card, skin, showBadges, w }) {
   const t0 = performance.now();
-  const img = await loadCardImage(cardImgHref(card.id));
+  const hasArt = !!SKIN_ART_DIR[skin.id];
+  const img = await loadCardImage(cardImgHref(card.id, skin.id));
   const h = Math.round((w * CARD_VB_H) / CARD_VB_W);
   const canvas = document.createElement('canvas');
   canvas.width = w;
@@ -413,7 +426,7 @@ async function buildRaster({ card, skin, showBadges, w }) {
   const ctx = canvas.getContext('2d');
   const sx = w / CARD_VB_W;
   const sy = h / CARD_VB_H;
-  const filterStr = SKIN_IMG_FILTER[skin.id] || '';
+  const filterStr = hasArt ? '' : SKIN_IMG_FILTER[skin.id] || '';
   const useCtxFilter = filterStr && supportsCanvasFilter();
 
   ctx.imageSmoothingEnabled = true;
@@ -432,7 +445,7 @@ async function buildRaster({ card, skin, showBadges, w }) {
 
   ctx.save();
   ctx.scale(sx, sy);
-  drawSkinOverlay(ctx, card, skin.id);
+  if (!hasArt) drawSkinOverlay(ctx, card, skin.id);
   if (showBadges) drawBadges(ctx, card, skin.palette);
   ctx.restore();
 
@@ -554,13 +567,14 @@ function renderCardFaceVector(card, skinId = 'skin_traditional_edo', showBadges 
   const skin = getCardSkinById(skinId);
   const p = skin.palette;
   const uid = `c${card.id}_${skin.id}`;
-  const imgHref = `./public/assets/cards/card_${card.id}.webp?v=26`;
+  const hasArt = !!SKIN_ART_DIR[skin.id];
+  const imgHref = cardImgHref(card.id, skin.id);
 
   // Optional skin decorative overlay (keeps the real Hanafuda artwork 100% recognizable)
   let skinOverlay = '';
-  const imgFilterStyle = SKIN_IMG_FILTER[skin.id] ? `filter: ${SKIN_IMG_FILTER[skin.id]};` : '';
+  const imgFilterStyle = !hasArt && SKIN_IMG_FILTER[skin.id] ? `filter: ${SKIN_IMG_FILTER[skin.id]};` : '';
 
-  switch (skin.id) {
+  switch (hasArt ? '' : skin.id) {
     case 'skin_sakura_pastel':
       skinOverlay = `
         <rect x="2" y="2" width="156" height="244" rx="8" fill="#ffb3c1" fill-opacity="0.10" style="mix-blend-mode: multiply;" />
@@ -592,6 +606,8 @@ function renderCardFaceVector(card, skinId = 'skin_traditional_edo', showBadges 
         <rect x="5" y="5" width="150" height="238" rx="6" fill="none" stroke="#4cc9f0" stroke-width="1.1" stroke-opacity="0.75" />
       `;
       break;
+    case '':
+      break; // skin có ảnh riêng: khung đã nằm trong ảnh
     case 'skin_traditional_edo':
     default:
       skinOverlay = `

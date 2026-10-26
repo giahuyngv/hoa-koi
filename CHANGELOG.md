@@ -11,6 +11,7 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 
 ## [Chưa phát hành]
 ### Thêm
+- Sưu tầm: 5 skin mặt bài (Anh Đào Pastel, Thủy Mặc Sumi-e, Sơn Mài Hoàng Kim, Bách Quỷ Dạ Hành, Phù Thế Ánh Trăng) có bộ 48 lá vẽ riêng ở `public/assets/cards/<skin>/`, viền gốc được cắt và phủ khung chung theo từng skin; trận đấu và Sưu tầm tự dùng ảnh của skin đang chọn (Truyền Thống Edo giữ ảnh cũ).
 - Bảng quyết định Koi-Koi/Shōbu có tiếng mở bảng (giấy lật trầm + phách gỗ nhẹ).
 ### Thay đổi
 - Menu ⚙: mục Tiểu cảnh bàn chỉ ghi "Tháng N" (hoặc "Ngẫu nhiên · Tháng N"); menu tự giãn ngang theo chữ, không xuống dòng.
