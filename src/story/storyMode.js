@@ -184,7 +184,9 @@ export class StoryController {
       }
       unlocked = before < 4 && own.length === 4;
     }
-    this.result = { month: m, win, ch, gap, n, draws, unlocked, playerScore: e.playerScore, aiScore: e.aiScore };
+    // Sao mới có thể đạt thành tựu Xuân Viên Mãn (main.js checkAchievements)
+    const ach = this.app.checkAchievements ? this.app.checkAchievements() : [];
+    this.result = { month: m, win, ch, gap, n, draws, unlocked, ach, playerScore: e.playerScore, aiScore: e.aiScore };
     this.match = null;
     this.app.persistSave();
     this.app.activeModal = null;
@@ -556,6 +558,7 @@ export class StoryController {
             <div class="tt-card st-res-lines">${line(r.win, 'Thắng trận', 'Thắng là mở tháng sau')}${line(r.ch, 'Thử thách', M.challenge)}${line(r.gap, 'Cách biệt', 'Hơn từ 5 điểm')}</div>
           </div>
           ${body}
+          ${(r.ach || []).map((it) => `<div class="kk-unlock"><span class="kk-unlock-title">${storyEsc(it.type)}</span><br><strong>${storyEsc(it.name)}</strong></div>`).join('')}
           <div class="kk-actions">${actions}</div>
         </div>
       </div>

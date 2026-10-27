@@ -9,8 +9,10 @@ import {
   CARD_SKINS,
   RARITY_CONFIG,
   getCardBackById,
-  getCardSkinById
-} from './data/collectionData.js?v=25';
+  getCardSkinById,
+  GACHA_CONFIG,
+  getAchievementById
+} from './data/collectionData.js?v=26';
 import {
   renderCardFaceSVG,
   renderCardBackSVG,
@@ -236,6 +238,8 @@ class HanaKoiApp {
     this.bindMultiplayerEvents();
     this.bindAutoStartAudio();
     this.story = new StoryController(this);
+    // Tính lùi thành tựu đọc được từ save cũ (đủ 12 đối thủ, 9 sao Mùa Xuân)
+    if (this.checkAchievements().length) this.persistSave();
     // Link vào phòng PvP thì vào thẳng bàn chơi; còn lại mở Màn chính (bàn chơi chia sẵn phía sau, chưa chạy mở hiệp)
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('joinRoom') || urlParams.get('autoPvp') === '1') {
@@ -719,7 +723,10 @@ class HanaKoiApp {
       defeatedOpponents: [],
       selectedOpponentId: 'koharu',
       matchRounds: 3,
-      tutorialSeen: false
+      tutorialSeen: false,
+      achievements: [], // id thành tựu đã đạt (ACHIEVEMENTS)
+      winStreak: 0, // chuỗi thắng trận đấu máy liên tiếp
+      gachaPity: 0 // số quẻ liên tiếp chưa ra Huyền Thoại
     };
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -3249,6 +3256,51 @@ class HanaKoiApp {
     this.cutinTimer = setTimeout(closeCutin, portraitUrl ? 3000 : 1900);
   }
 
+  /**
+   * Thành tựu: đạt điều kiện thì mở món có achievementId tương ứng (collectionData).
+   * ctx = sự kiện vừa xảy ra; không có ctx thì chỉ xét tiến độ đã lưu. Trả về danh sách để hiện ở bảng kết quả.
+   */
+  checkAchievements(ctx = null) {
+    const sd = this.saveData;
+    const done = new Set(sd.achievements || []);
+    const met = [];
+    if (ctx && ctx.roundWin) {
+      if ((ctx.yakus || []).some((y) => y.id === 'goko')) met.push('ach_goko');
+      if (ctx.koikoiCount >= 2) met.push('ach_koikoi2');
+      if (ctx.finalPoints >= 15) met.push('ach_big15');
+    }
+    if (ctx && ctx.matchWin) {
+      if ((sd.winStreak || 0) >= 5) met.push('ach_streak5');
+      if (ctx.opponentId === 'kaguya' && ctx.totalRounds >= 12) met.push('ach_kaguya12');
+    }
+    if (ANIME_OPPONENTS.every((o) => sd.defeatedOpponents.includes(o.id))) met.push('ach_all12');
+    const stars = (sd.storyProgress && sd.storyProgress.stars) || {};
+    if ([1, 2, 3].every((m) => (stars[m] || 0) >= 3)) met.push('ach_spring9');
+
+    const unlocked = [];
+    met.forEach((id) => {
+      if (done.has(id)) return;
+      done.add(id);
+      const ach = getAchievementById(id);
+      let gotItem = false;
+      CARD_BACKS.filter((b) => b.achievementId === id).forEach((b) => {
+        if (sd.unlockedBacks.includes(b.id)) return;
+        sd.unlockedBacks.push(b.id);
+        unlocked.push({ type: `🏆 Thành tựu ${ach.name} · Mặt Lưng`, name: b.name });
+        gotItem = true;
+      });
+      CARD_SKINS.filter((sk) => sk.achievementId === id).forEach((sk) => {
+        if (sd.unlockedSkins.includes(sk.id)) return;
+        sd.unlockedSkins.push(sk.id);
+        unlocked.push({ type: `🏆 Thành tựu ${ach.name} · Mặt Bài`, name: sk.name });
+        gotItem = true;
+      });
+      if (!gotItem) unlocked.push({ type: '🏆 Thành tựu', name: ach.name });
+    });
+    sd.achievements = Array.from(done);
+    return unlocked;
+  }
+
   handleRoundFinished(outcome, fromRemoteSync = false) {
     this.lastRoundSummary = outcome;
     const opp = this.currentOpponent;
@@ -3294,6 +3346,22 @@ class HanaKoiApp {
         this.newlyUnlockedItems.push({ type: 'Thiết Kế Mặt Bài', name: sObj.name });
       }
       this.currentDialogue = this.pickRandom(opp.dialogues.defeatMatch);
+    }
+
+    if (!isMp) {
+      const matchWin = outcome.isMatchComplete && this.engine.playerScore > this.engine.aiScore;
+      if (outcome.isMatchComplete) this.saveData.winStreak = matchWin ? (this.saveData.winStreak || 0) + 1 : 0;
+      this.newlyUnlockedItems.push(
+        ...this.checkAchievements({
+          roundWin: outcome.winner === 'player',
+          yakus: outcome.yakus,
+          finalPoints: outcome.finalPoints,
+          koikoiCount: this.engine.playerKoiKoiCount || 0,
+          matchWin,
+          opponentId: opp.id,
+          totalRounds: this.engine.totalRounds
+        })
+      );
     }
 
     if (isMp && !fromRemoteSync) {
@@ -4533,11 +4601,16 @@ class HanaKoiApp {
                     ? `<button class="nav-btn ${equipped ? 'is-equipped' : 'primary-gold'}" data-equip-back="${back.id}" style="width:100%; justify-content:center;">
                         ${equipped ? '✅ Đang Trang Bị' : '🎴 Trang Bị Mặt Lưng'}
                        </button>`
-                    : `<div style="font-size:11px; color:var(--sakura); font-weight:700;">
+                    : back.achievementId
+                      ? `<div style="font-size:11px; color:var(--sakura); font-weight:700;">
+                          🏆 Thành tựu <strong>${getAchievementById(back.achievementId).name}</strong>
+                         </div>
+                         <div style="font-size:11px; color:var(--text-muted); line-height:1.35;">${getAchievementById(back.achievementId).desc}</div>`
+                      : `<div style="font-size:11px; color:var(--sakura); font-weight:700;">
                         ${boss ? `Đánh bại <strong>${boss.name}</strong> hoặc Mua:` : 'Mở tại Tiệm / Gacha:'}
                        </div>
                        <button class="nav-btn" data-buy-back="${back.id}" style="width:100%; justify-content:center;">
-                         🪙 Mua Ngay (${back.price} Xu)
+                         🪙 Mua Ngay (${back.price.toLocaleString('vi-VN')} Xu)
                        </button>`
                 }
               </div>
@@ -4582,11 +4655,16 @@ class HanaKoiApp {
                     ? `<button class="nav-btn ${equipped ? 'is-equipped' : 'primary-gold'}" data-equip-skin="${skin.id}" style="width:100%; justify-content:center;">
                         ${equipped ? '✅ Đang Sử Dụng' : '🎨 Áp Dụng Cho 48 Lá Bài'}
                        </button>`
-                    : `<div style="font-size:11px; color:var(--sakura); font-weight:700;">
+                    : skin.achievementId
+                      ? `<div style="font-size:11px; color:var(--sakura); font-weight:700;">
+                          🏆 Thành tựu <strong>${getAchievementById(skin.achievementId).name}</strong>
+                         </div>
+                         <div style="font-size:11px; color:var(--text-muted); line-height:1.35;">${getAchievementById(skin.achievementId).desc}</div>`
+                      : `<div style="font-size:11px; color:var(--sakura); font-weight:700;">
                         ${boss ? `Đánh bại <strong>${boss.name}</strong> hoặc Mua:` : 'Mở khóa bằng Xu Hoa:'}
                        </div>
                        <button class="nav-btn" data-buy-skin="${skin.id}" style="width:100%; justify-content:center;">
-                         🪙 Mua Ngay (${skin.price} Xu)
+                         🪙 Mua Ngay (${skin.price.toLocaleString('vi-VN')} Xu)
                        </button>`
                 }
               </div>
@@ -4740,8 +4818,9 @@ class HanaKoiApp {
       btn.onclick = () => {
         const backId = btn.getAttribute('data-buy-back');
         const back = getCardBackById(backId);
+        if (back.achievementId) return;
         if (this.saveData.coins < back.price) {
-          alert(`Bạn cần ${back.price} Xu Hoa để mở khóa "${back.name}"! Hãy thắng thêm ván bài để nhận Xu Hoa.`);
+          alert(`Bạn cần ${back.price.toLocaleString('vi-VN')} Xu Hoa để mở khóa "${back.name}"! Hãy thắng thêm ván bài để nhận Xu Hoa.`);
           return;
         }
         this.saveData.coins -= back.price;
@@ -4772,8 +4851,9 @@ class HanaKoiApp {
       btn.onclick = () => {
         const skinId = btn.getAttribute('data-buy-skin');
         const skin = getCardSkinById(skinId);
+        if (skin.achievementId) return;
         if (this.saveData.coins < skin.price) {
-          alert(`Bạn cần ${skin.price} Xu Hoa để mở khóa "${skin.name}"!`);
+          alert(`Bạn cần ${skin.price.toLocaleString('vi-VN')} Xu Hoa để mở khóa "${skin.name}"!`);
           return;
         }
         this.saveData.coins -= skin.price;
@@ -4820,6 +4900,10 @@ class HanaKoiApp {
   // ==========================================================================
 
   buildGachaModalHTML() {
+    const gBacks = CARD_BACKS.filter((b) => !b.unlockedByDefault && !b.achievementId).length;
+    const gSkins = CARD_SKINS.filter((sk) => !sk.unlockedByDefault && !sk.achievementId).length;
+    const fmtXu = (n) => n.toLocaleString('vi-VN');
+    const pityLeft = GACHA_CONFIG.pityLegendary - (this.saveData.gachaPity || 0);
     return `
       <div class="modal-backdrop kk-backdrop" id="modal-backdrop-close">
         <div class="modal-window scroll-modal is-gacha tt-panel tt-shop">
@@ -4832,22 +4916,23 @@ class HanaKoiApp {
               <div class="tt-gacha-kicker">🌸 Ước nguyện đền hoa anh đào 🌸</div>
               <h3 class="gacha-title">Rút Quẻ Mở Hộp Sơn Mài Edo</h3>
               <p class="gacha-desc">
-                Cơ hội trúng tất cả <strong>10 Thiết Kế Mặt Lưng</strong> và <strong>6 Bộ Mặt Bài Nghệ Thuật</strong> (bao gồm cả bậc Huyền Thoại SSR &amp; Thần Thoại UR!). Nếu rút trùng sẽ được hoàn trả <strong>+90 Xu Hoa Lộc</strong>!
+                Cơ hội trúng <strong>${gBacks} Thiết Kế Mặt Lưng</strong> và <strong>${gSkins} Bộ Mặt Bài</strong>. Tỉ lệ: Cổ Điển ${GACHA_CONFIG.rates.common}% · Hiếm ${GACHA_CONFIG.rates.rare}% · Sử Thi ${GACHA_CONFIG.rates.epic}% · Huyền Thoại ${GACHA_CONFIG.rates.legendary}%. Rút trùng được hoàn Xu theo độ hiếm. Món Thần Thoại chỉ mở bằng thành tựu.
               </p>
 
               <div class="tt-gacha-actions">
                 <button class="tt-gacha-btn is-dark gacha-btn" id="btn-gacha-1">
                   <img class="gacha-tube" src="./public/assets/koikoi_scroll/omikuji_1.webp" alt="" draggable="false" />
-                  <span class="tt-gacha-text"><b>Rút 1 Quẻ Hoa</b><em>🪙 150 Xu Hoa</em></span>
+                  <span class="tt-gacha-text"><b>Rút 1 Quẻ Hoa</b><em>🪙 ${fmtXu(GACHA_CONFIG.costSingle)} Xu Hoa</em></span>
                 </button>
                 <button class="tt-gacha-btn is-red is-glow gacha-btn" id="btn-gacha-5">
                   <img class="gacha-tube" src="./public/assets/koikoi_scroll/omikuji_5.webp?v=2" alt="" draggable="false" />
-                  <span class="tt-gacha-text"><b>Rút 5 Quẻ Liên Hoàn</b><em>🪙 650 Xu Hoa · Tiết kiệm 100 Xu</em></span>
+                  <span class="tt-gacha-text"><b>Rút 10 Quẻ Liên Hoàn</b><em>🪙 ${fmtXu(GACHA_CONFIG.costTen)} Xu · Chắc chắn ≥ 1 Sử Thi</em></span>
                 </button>
               </div>
 
               <div class="gacha-balance">
                 Số dư hiện tại: <strong>🪙 ${this.saveData.coins.toLocaleString('vi-VN')} Xu Hoa</strong>
+                · Còn <strong>${pityLeft}</strong> quẻ chắc chắn ra Huyền Thoại
               </div>
               ${
                 this.gachaResults.length > 0
@@ -4866,7 +4951,7 @@ class HanaKoiApp {
                         ${r.kind === 'back' ? renderCardBackSVG(r.item.id) : renderCardFaceSVG(sampleCard, r.item.id, true)}
                       </div>
                       <span class="tt-res-name">${r.item.name.replace(/\s*\(.*\)\s*$/, '')}</span>
-                      <span class="tt-res-badge">${r.isNew ? '✨ MỚI MỞ KHÓA!' : '🔄 Trùng (+90 Xu)'}</span>
+                      <span class="tt-res-badge">${r.isNew ? '✨ MỚI MỞ KHÓA!' : `🔄 Trùng (+${r.refund} Xu)`}</span>
                     </div>`;
                     })
                     .join('')}
@@ -4899,39 +4984,44 @@ class HanaKoiApp {
       }
       this.saveData.coins -= cost;
 
-      // Build weighted pool of all collectible backs & skins (excluding default free ones)
+      // Bể gacha: bỏ món mặc định và món chỉ mở bằng thành tựu.
+      // Rút độ hiếm theo GACHA_CONFIG.rates trước, rồi chọn đều 1 món trong bậc đó.
       const pool = [
-        ...CARD_BACKS.filter((b) => !b.unlockedByDefault).map((item) => ({
-          kind: 'back',
-          item,
-          weight: RARITY_CONFIG[item.rarity].weight
-        })),
-        ...CARD_SKINS.filter((s) => !s.unlockedByDefault).map((item) => ({
-          kind: 'skin',
-          item,
-          weight: RARITY_CONFIG[item.rarity].weight
-        }))
+        ...CARD_BACKS.filter((b) => !b.unlockedByDefault && !b.achievementId).map((item) => ({ kind: 'back', item })),
+        ...CARD_SKINS.filter((sk) => !sk.unlockedByDefault && !sk.achievementId).map((item) => ({ kind: 'skin', item }))
       ];
+      const tiers = Object.keys(GACHA_CONFIG.rates).filter((t) => pool.some((p) => p.item.rarity === t));
+      const pickTier = (allowed) => {
+        const list = tiers.filter((t) => allowed.includes(t));
+        const total = list.reduce((sum, t) => sum + GACHA_CONFIG.rates[t], 0);
+        let x = Math.random() * total;
+        for (const t of list) {
+          if (x < GACHA_CONFIG.rates[t]) return t;
+          x -= GACHA_CONFIG.rates[t];
+        }
+        return list[list.length - 1];
+      };
 
-      const totalWeight = pool.reduce((s, p) => s + p.weight, 0);
       const results = [];
       let hasHigh = false;
+      let gotSr = false;
       const prevCardIds = new Set(
         (this.gachaResults || []).map((prev) => prev.sampleCardId).filter(Boolean)
       );
       const usedCardIds = new Set();
 
       for (let i = 0; i < count; i++) {
-        let r = Math.random() * totalWeight;
-        let picked = pool[0];
-        for (const entry of pool) {
-          if (r < entry.weight) {
-            picked = entry;
-            break;
-          }
-          r -= entry.weight;
-        }
+        const pityHit = (this.saveData.gachaPity || 0) + 1 >= GACHA_CONFIG.pityLegendary;
+        const needSr = count >= 10 && i === count - 1 && !gotSr;
+        const tier = pityHit && tiers.includes('legendary')
+          ? 'legendary'
+          : pickTier(needSr ? ['epic', 'legendary'] : tiers);
+        const inTier = pool.filter((p) => p.item.rarity === tier);
+        const picked = inTier[Math.floor(Math.random() * inTier.length)];
+        if (tier === 'epic' || tier === 'legendary') gotSr = true;
+        this.saveData.gachaPity = tier === 'legendary' ? 0 : (this.saveData.gachaPity || 0) + 1;
 
+        let refund = 0;
         const isNew =
           picked.kind === 'back'
             ? !this.saveData.unlockedBacks.includes(picked.item.id)
@@ -4944,7 +5034,8 @@ class HanaKoiApp {
             this.saveData.unlockedSkins.push(picked.item.id);
           }
         } else {
-          this.saveData.coins += 90; // Duplicate refund
+          refund = GACHA_CONFIG.dupRefund[picked.item.rarity] || 0;
+          this.saveData.coins += refund; // Hoàn Xu khi trùng theo độ hiếm
         }
 
         if (picked.item.rarity === 'legendary' || picked.item.rarity === 'mythic') {
@@ -4958,7 +5049,7 @@ class HanaKoiApp {
         const randomCard = cardPool[Math.floor(Math.random() * cardPool.length)];
         usedCardIds.add(randomCard.id);
 
-        results.push({ ...picked, isNew, sampleCardId: randomCard.id });
+        results.push({ ...picked, isNew, refund, sampleCardId: randomCard.id });
       }
 
       soundEngine.playGachaReveal(hasHigh);
@@ -4991,8 +5082,8 @@ class HanaKoiApp {
     };
     const btn1 = root.querySelector('#btn-gacha-1');
     const btn5 = root.querySelector('#btn-gacha-5');
-    btn1.onclick = () => shakeThenRoll(btn1, 1, 150);
-    btn5.onclick = () => shakeThenRoll(btn5, 5, 650);
+    btn1.onclick = () => shakeThenRoll(btn1, 1, GACHA_CONFIG.costSingle);
+    btn5.onclick = () => shakeThenRoll(btn5, 10, GACHA_CONFIG.costTen);
   }
 
   // ==========================================================================

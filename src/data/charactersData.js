@@ -634,7 +634,7 @@ export const ANIME_OPPONENTS = [
     boardWood: 'autumn_maple',
     rewardCoins: 680,
     firstWinBonusCoins: 1100,
-    unlocksCardBack: 'back_imperial_dragon',
+    unlocksCardBack: null, // Long Vương: nay mở bằng thành tựu Đại Thắng
     unlocksCardSkin: 'skin_sumie_ink',
     bio: 'Bước ra từ cổ tích hiệp khách "Jiraiya Gōketsu Monogatari". Mỹ nhân 36 tuổi mang vẻ đẹp trưởng thành rực lửa bất chấp thời gian, ấn chú tím trên trán và khí chất chị đại hào sảng trên chiếu bạc.',
     strategyHint: 'Cực kỳ máu lửa! Rất thích săn bộ Heo-Nai-Bướm (Ino-Shika-Chō) và sẵn sàng hô Koi-Koi liên hoàn để nhân đôi điểm.',
@@ -741,8 +741,8 @@ export const ANIME_OPPONENTS = [
     boardWood: 'moon_palace',
     rewardCoins: 1000,
     firstWinBonusCoins: 2000,
-    unlocksCardBack: 'back_tsukuyomi_moon',
-    unlocksCardSkin: 'skin_ukiyoe_neon',
+    unlocksCardBack: null, // Nguyệt Cung + Phù Thế: nay mở bằng thành tựu
+    unlocksCardSkin: null,
     bio: 'Nguyên mẫu từ kiệt tác cổ điển "Taketori Monogatari". Mỹ nhân Nguyệt Cung 26 tuổi với mái tóc bạch kim suôn dài, đôi mắt sắc lạnh kiêu kỳ dưới vầng trăng tròn Tháng 8.',
     strategyHint: 'Tuyệt kỹ Nguyệt Kiến Tửu (Trăng Rằm + Chén Rượu) và săn tìm Ngũ Quang với khả năng đọc bài siêu việt.',
     voiceProfile: {
@@ -1141,7 +1141,7 @@ export const ANIME_OPPONENTS = [
     boardWood: 'moon_palace',
     rewardCoins: 1500,
     firstWinBonusCoins: 3000,
-    unlocksCardBack: 'back_imperial_dragon',
+    unlocksCardBack: null, // Long Vương: nay mở bằng thành tựu Đại Thắng
     unlocksCardSkin: 'skin_kintsugi_gold',
     bio: 'Đỉnh cao của 12 tháng bài Hoa: Nữ Đế Phượng Hoàng 42 tuổi mang vẻ đẹp quý phái bất lão, uy quyền tối thượng với đôi mắt phượng kẻ chu sa đỏ kim và trâm vàng Thần Điểu Hōō.',
     strategyHint: 'Boss tối thượng Tháng 12: tính toán toàn diện cả Ngũ Quang (Gokō), Tứ Quang, Xích/Thanh Đan và chặn đứng mọi đường thắng của đối phương.',

@@ -45,6 +45,7 @@ export class KoiKoiEngine {
     this.aiLastYakuSig = '';
     this.playerCalledKoiKoi = false;
     this.aiCalledKoiKoi = false;
+    this.playerKoiKoiCount = 0; // số lần người chơi gọi Koi-Koi trong hiệp (thành tựu)
 
     // Turn state: 'PLAYER_HAND', 'PLAYER_SELECT_FIELD_HAND', 'PLAYER_DRAWING', 'PLAYER_SELECT_FIELD_DRAW',
     // 'PLAYER_KOIKOI_DECISION', 'AI_TURN', 'ROUND_OVER', 'MATCH_OVER'
@@ -114,6 +115,7 @@ export class KoiKoiEngine {
     this.aiLastYakuSig = '';
     this.playerCalledKoiKoi = false;
     this.aiCalledKoiKoi = false;
+    this.playerKoiKoiCount = 0; // số lần người chơi gọi Koi-Koi trong hiệp (thành tựu)
     this.pendingCard = null;
     this.drawnCard = null;
     this.matchingFieldCandidates = [];
@@ -438,6 +440,7 @@ export class KoiKoiEngine {
   declareKoiKoi(actor) {
     if (actor === 'player') {
       this.playerCalledKoiKoi = true;
+      this.playerKoiKoiCount = (this.playerKoiKoiCount || 0) + 1;
       if (this.playerHand.length === 0 && this.aiHand.length === 0) {
         return this.finishRound('draw', [], 0, 1);
       }

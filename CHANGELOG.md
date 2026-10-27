@@ -11,6 +11,7 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 
 ## [Chưa phát hành]
 ### Thêm
+- Thành tựu mở món sưu tầm (không bán, không có trong gacha): Ngũ Quang → Vảy Rồng Hoàng Kim, Gan Cùng Mình (2 lần Koi-Koi vẫn thắng) → Da Cá Mập Bạc, Chuỗi Hoa (thắng 5 trận liên tiếp) → Sương Hoàng Hôn, Xuân Viên Mãn (9/9 sao Mùa Xuân) → Mây Lành Chàm, Đại Thắng (thắng 1 tháng ≥ 15 điểm) → Long Vương Hoàng Gia, Ánh Trăng Cuối (hạ Kaguya trận 12 tháng) → Nguyệt Cung, Bách Chiến (hạ đủ 12 đối thủ) → skin Phù Thế Ánh Trăng. Kaguya/Tsunade/Amaterasu không còn tặng các món này khi thắng. Lưu ở `saveData.achievements`, `winStreak`, `gachaPity`.
 - Màn chính khi mở game (sau loading): logo 花恋 HOA KOI và 4 ô Cốt truyện / Đấu máy / PvP / Cài đặt; nút "Màn chính" trên thanh trên và menu ≡ để quay lại.
 - Chế độ Cốt truyện "Hành trình 12 tháng" (chương Xuân, tháng 1–3): Ayame dẫn truyện, tạo lữ khách (4 chân dung + 6 gia huy + màu nền), bản đồ 4 mùa, hội thoại trước/sau trận, thử thách tháng, trận Koi-Koi thật với AI chủ tháng; sao (thắng / thử thách / cách biệt ≥5) đổi thành lượt bốc lá của tháng, lá trùng thành mảnh hoa, đủ 4 lá mở avatar chủ tháng. Lưu ở `saveData.storyProgress`.
 - Màn chính: ô PvP = Ghép trận nhanh, ô dưới phải = Phòng mã, Cài đặt là nút nhỏ ở góc trên phải cạnh chip lữ khách; trong trận bỏ 2 nút Ghép Trận / Phòng Mã ở góc trên (chỉ vào từ Màn chính); trận cốt truyện thì nút góc trái ghi "Cốt truyện" (bấm để về bản đồ).
@@ -21,6 +22,7 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Mặt lưng mới "Lá Gai Đêm (Asanoha Kuro)" (SR, 800 xu, cửa hàng/gacha): sơn mài đen, hoa văn lá gai Asanoha in nổi; mặt lưng này không phủ lớp sóng mờ (`noWagara`).
 - 13 mặt lưng mới vẽ kiểu sơn mài in chìm/nổi (cửa hàng/gacha, không phủ lớp sóng mờ): Mây Lành Chàm, Sóng Biển Đỏ Đô, Mai Rùa Trà Xanh, Thất Bảo Tử Đằng, Lông Tên Đêm, Anh Đào Phấn Hồng, Vảy Rồng Hoàng Kim, Bàn Cờ Hạt Dẻ, Hơi Nước Ngọc Bích, Da Cá Mập Bạc, Sương Hoàng Hôn, Đan Tre Rêu Xanh, Lá Gai Ngà Trắng. Ảnh ở `public/assets/backs/`.
 ### Thay đổi
+- Sưu tầm: bảng giá mới khó hơn (Cổ Điển ×9, Hiếm ×12, Sử Thi ×13,5, Huyền Thoại ×15 so với giá cũ; vd mặt lưng Hiếm 450 → 5.400 xu). Gacha 1.200 xu/quẻ, 10 quẻ 10.800 xu (chắc chắn ≥ 1 Sử Thi); rút theo bậc cố định 30/45/20/5%, quẻ thứ 40 liên tiếp chắc chắn ra Huyền Thoại, hoàn trùng theo độ hiếm (180–1.800 xu). Đồ và Xu người chơi đã có giữ nguyên.
 - Thanh trên cùng trận (mobile/compact): pill Hiệp/Tháng luôn đúng tâm (grid 1fr·auto·1fr), chip Đối thủ sát trái pill, chip Bạn sát phải pill, tên không xuống dòng, nút Yaku dính mép phải.
 - Ô Lữ khách (avatar + tên) ở góc trên phải màn chính rộng hơn: khoảng trống ngang trước/sau chữ tăng gấp 3 (desktop gap 30px/phải 48px, mobile 18px/30px).
 - Khi ăn Yaku (cả người chơi và đối thủ), nhạc nền tạm dừng đúng lúc tiếng Koto của bộ vang lên rồi phát tiếp từ chỗ cũ (chỉ khi đang bật cả nhạc nền và hiệu ứng).
