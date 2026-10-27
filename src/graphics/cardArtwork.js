@@ -103,13 +103,14 @@ function faceJob(card, skin, showBadges, w, key) {
   return { key, w, cls: faceClass(skin.id), build: () => buildRaster({ card, skin, showBadges, w }) };
 }
 
-// Skin có bộ mặt bài vẽ riêng (48 lá, khung đã phủ sẵn) → public/assets/cards/<thư mục>/card_N.webp
+// Skin có bộ mặt bài vẽ riêng (48 lá, khung đã phủ sẵn) → thư mục riêng trong assets/cards, ảnh card_N.webp
 const SKIN_ART_DIR = {
   skin_sakura_pastel: 'sakura_pastel',
   skin_sumie_ink: 'sumie_ink',
   skin_kintsugi_gold: 'kintsugi_gold',
   skin_yokai_night: 'yokai_night',
-  skin_ukiyoe_neon: 'ukiyoe_celestial'
+  skin_ukiyoe_neon: 'ukiyoe_celestial',
+  skin_pixel_16bit: 'pixel_16bit'
 };
 const SKIN_ART_V = '?v=1';
 

@@ -17,6 +17,7 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Avatar lữ khách hiện ở ô điểm "Bạn" khi đấu máy; pop-up Koi-Koi của người chơi dùng ảnh riêng của lữ khách, cùng chữ và bố cục với pop-up của đối thủ.
 - Sưu tầm: 5 skin mặt bài (Anh Đào Pastel, Thủy Mặc Sumi-e, Sơn Mài Hoàng Kim, Bách Quỷ Dạ Hành, Phù Thế Ánh Trăng) có bộ 48 lá vẽ riêng ở `public/assets/cards/<skin>/`, viền gốc được cắt và phủ khung chung theo từng skin; trận đấu và Sưu tầm tự dùng ảnh của skin đang chọn (Truyền Thống Edo giữ ảnh cũ).
 - Bảng quyết định Koi-Koi/Shōbu có tiếng mở bảng (giấy lật trầm + phách gỗ nhẹ).
+- Sưu tầm: skin mặt bài mới "Điểm Ảnh Cổ Điển (Pixel 16-bit)" (SR, 1200 xu, cửa hàng/gacha): 48 lá vẽ lại kiểu pixel art máy game 16-bit, khung pixel đinh tán vàng, ảnh ở `public/assets/cards/pixel_16bit/`.
 - Mặt lưng mới "Lá Gai Đêm (Asanoha Kuro)" (SR, 800 xu, cửa hàng/gacha): sơn mài đen, hoa văn lá gai Asanoha in nổi; mặt lưng này không phủ lớp sóng mờ (`noWagara`).
 ### Thay đổi
 - Khi ăn Yaku (cả người chơi và đối thủ), nhạc nền tạm dừng đúng lúc tiếng Koto của bộ vang lên rồi phát tiếp từ chỗ cũ (chỉ khi đang bật cả nhạc nền và hiệu ứng).

@@ -322,6 +322,32 @@ export const CARD_SKINS = [
       ink: '#ffffff',
       foilEffect: 'holo_rainbow'
     }
+  },
+  {
+    id: 'skin_pixel_16bit',
+    name: 'Điểm Ảnh Cổ Điển (Pixel 16-bit)',
+    jpName: 'ドット絵・十六ビット',
+    rarity: 'epic',
+    price: 1200,
+    unlockedByDefault: false,
+    bossUnlockId: null,
+    description: 'Bộ bài pixel art kiểu máy game 16-bit: ô điểm ảnh rõ nét, đổ bóng chấm dither, nền giấy kem và khung pixel đinh tán vàng.',
+    palette: {
+      paperBg: '#f6eace',
+      paperGrad: '#e8d3a8',
+      frameBorder: '#18121e',
+      sunRed: '#d8282f',
+      skyHighlight: '#fff6e0',
+      foliageDark: '#2e2a36',
+      foliageMid: '#4a4656',
+      blossomPink: '#f06a8a',
+      crimson: '#c0202a',
+      gold: '#e8b23e',
+      indigo: '#3b3f8f',
+      purple: '#6b4bb3',
+      ink: '#18121e',
+      foilEffect: 'none'
+    }
   }
 ];
 
