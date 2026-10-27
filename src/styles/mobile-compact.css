@@ -209,13 +209,15 @@ body.layout-compact .hk-dropdown-grid .dropdown-item-btn.is-active-mode {
 }
 
 /* Thanh header compact */
+/* Grid 3 cột cân: pill Hiệp/Tháng luôn đúng tâm; [≡ … Đối thủ] | pill | [Bạn … Yaku] */
 body.layout-compact .hk-compact-topbar.hk-compact-only {
-  display: flex !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-column: 1 / -1; /* #top-nav là grid 3 cột desktop → trải hết bề ngang */
   align-items: center;
-  justify-content: space-between;
   width: 100%;
   height: 40px;
-  gap: 8px;
+  column-gap: 8px;
   font-family: var(--font-compact-sans);
 }
 
@@ -223,8 +225,21 @@ body.layout-compact .hk-compact-header-left,
 body.layout-compact .hk-compact-header-right {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 7px;
   min-width: 0;
+}
+
+body.layout-compact .hk-compact-header-left { grid-column: 1; }
+body.layout-compact .hk-compact-round-pill { grid-column: 2; }
+body.layout-compact .hk-compact-header-right { grid-column: 3; }
+
+/* Tên tự giãn theo điểm + 🔥, không xuống dòng */
+body.layout-compact .hk-compact-opp-chip,
+body.layout-compact .hk-compact-player-chip {
+  width: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ① Nút [≡] */
@@ -1956,3 +1971,6 @@ body.layout-compact .tt-res-cards { grid-template-columns: repeat(auto-fit, 100p
 body.layout-compact .tt-res-face { width: 72px !important; }
 body.layout-compact .tt-res-name { font-size: 10.5px !important; }
 body.layout-compact .tt-res-badge { font-size: 9px !important; padding: 0 4px !important; }
+
+/* Ô Lữ khách (story): padding ngang trước/sau chữ ×3 */
+body.layout-compact .st-chip { padding-right: 30px; gap: 18px; }

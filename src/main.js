@@ -809,8 +809,7 @@ class HanaKoiApp {
           btn.id === 'btn-choose-shobu' ||
           btn.id === 'btn-next-round' ||
           btn.id === 'btn-play-again' ||
-          btn.id === 'btn-restart-match' ||
-          btn.id === 'btn-unlock-all-demo'
+          btn.id === 'btn-restart-match'
         ) {
           return;
         }
@@ -4645,9 +4644,6 @@ class HanaKoiApp {
               </div>
               <div class="sm-wallet">
                 <span class="sm-coins">🪙 ${this.saveData.coins.toLocaleString('vi-VN')} Xu Hoa</span>
-                <button class="nav-btn" id="btn-unlock-all-demo" title="Nhận 2000 Xu Hoa để trải nghiệm mua sắm & Gacha">
-                  🎁 +2,000 Xu Trải Nghiệm
-                </button>
               </div>
             </div>
 
@@ -4728,17 +4724,6 @@ class HanaKoiApp {
       };
     });
 
-    const bonusBtn = root.querySelector('#btn-unlock-all-demo');
-    if (bonusBtn) {
-      bonusBtn.onclick = () => {
-        soundEngine.playCoinReward(6);
-        this.saveData.coins += 2000;
-        this.persistSave();
-        this.renderTopNav();
-        this.renderActiveModal();
-      };
-    }
-
     // Equip Back
     root.querySelectorAll('[data-equip-back]').forEach((btn) => {
       btn.onclick = () => {
@@ -4756,7 +4741,7 @@ class HanaKoiApp {
         const backId = btn.getAttribute('data-buy-back');
         const back = getCardBackById(backId);
         if (this.saveData.coins < back.price) {
-          alert(`Bạn cần ${back.price} Xu Hoa để mở khóa "${back.name}"! (Có thể bấm nút +2,000 Xu Trải Nghiệm hoặc thắng các ván bài)`);
+          alert(`Bạn cần ${back.price} Xu Hoa để mở khóa "${back.name}"! Hãy thắng thêm ván bài để nhận Xu Hoa.`);
           return;
         }
         this.saveData.coins -= back.price;
@@ -4909,7 +4894,7 @@ class HanaKoiApp {
 
     const rollGacha = (count, cost) => {
       if (this.saveData.coins < cost) {
-        alert(`Bạn cần ${cost} Xu Hoa để rút quẻ! Hãy đấu thêm ván bài hoặc nhận Xu Trải Nghiệm trong Bộ Sưu Tập nhé.`);
+        alert(`Bạn cần ${cost} Xu Hoa để rút quẻ! Hãy đấu thêm ván bài để nhận Xu Hoa nhé.`);
         return;
       }
       this.saveData.coins -= cost;

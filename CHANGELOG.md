@@ -19,7 +19,10 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Bảng quyết định Koi-Koi/Shōbu có tiếng mở bảng (giấy lật trầm + phách gỗ nhẹ).
 - Sưu tầm: skin mặt bài mới "Điểm Ảnh Cổ Điển (Pixel 16-bit)" (SR, 1200 xu, cửa hàng/gacha): 48 lá vẽ lại kiểu pixel art máy game 16-bit, khung pixel đinh tán vàng, ảnh ở `public/assets/cards/pixel_16bit/`.
 - Mặt lưng mới "Lá Gai Đêm (Asanoha Kuro)" (SR, 800 xu, cửa hàng/gacha): sơn mài đen, hoa văn lá gai Asanoha in nổi; mặt lưng này không phủ lớp sóng mờ (`noWagara`).
+- 13 mặt lưng mới vẽ kiểu sơn mài in chìm/nổi (cửa hàng/gacha, không phủ lớp sóng mờ): Mây Lành Chàm, Sóng Biển Đỏ Đô, Mai Rùa Trà Xanh, Thất Bảo Tử Đằng, Lông Tên Đêm, Anh Đào Phấn Hồng, Vảy Rồng Hoàng Kim, Bàn Cờ Hạt Dẻ, Hơi Nước Ngọc Bích, Da Cá Mập Bạc, Sương Hoàng Hôn, Đan Tre Rêu Xanh, Lá Gai Ngà Trắng. Ảnh ở `public/assets/backs/`.
 ### Thay đổi
+- Thanh trên cùng trận (mobile/compact): pill Hiệp/Tháng luôn đúng tâm (grid 1fr·auto·1fr), chip Đối thủ sát trái pill, chip Bạn sát phải pill, tên không xuống dòng, nút Yaku dính mép phải.
+- Ô Lữ khách (avatar + tên) ở góc trên phải màn chính rộng hơn: khoảng trống ngang trước/sau chữ tăng gấp 3 (desktop gap 30px/phải 48px, mobile 18px/30px).
 - Khi ăn Yaku (cả người chơi và đối thủ), nhạc nền tạm dừng đúng lúc tiếng Koto của bộ vang lên rồi phát tiếp từ chỗ cũ (chỉ khi đang bật cả nhạc nền và hiệu ứng).
 - Menu ⚙: mục Tiểu cảnh bàn chỉ ghi "Tháng N" (hoặc "Ngẫu nhiên · Tháng N"); menu tự giãn ngang theo chữ, không xuống dòng.
 - Bảng Luật chơi & Yaku dùng khung "Bàn Chiếu" như các panel khác: viền sơn mài, nền chiếu, header chữ vàng, mục tiêu đề trên dải sơn mài, mỗi Yaku là một thẻ washi với nhãn điểm sơn mài; nút hướng dẫn đỏ son.
@@ -31,7 +34,9 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Ảnh ống Rút 5 Quẻ còn sót mảng nền trắng giữa dây tua và thân ống, nay đã xóa sạch.
 - Ảnh thông (thong_dung_cao) tiểu cảnh tháng 1 thay mới nhưng bản deploy vẫn hiện ảnh cũ: URL ảnh month1 giữ `?v=1` nên trình duyệt dùng bản cache 1 năm; tăng lên `?v=2`.
 - Bảng kết quả tháng hoà hiện thừa chữ `(引き分け)">` ở góc trái trên: tiêu đề có thẻ HTML làm vỡ thuộc tính aria-label, nay bỏ thẻ HTML trước khi đưa vào aria-label.
+- iPhone: gõ tên ở màn Lữ khách (hay ô nhập bất kỳ) không còn làm cả UI co nhỏ khi bàn phím hiện: đang gõ thì giữ nguyên scale, rời ô nhập mới đo lại; ô nhập `.st-inp` / `.tt-input` dùng chữ 16px để iOS không tự zoom.
 ### Gỡ bỏ
+- Bỏ nút "+2,000 Xu Trải Nghiệm" trong panel Sưu tầm (cùng lời nhắc tới nút này trong thông báo thiếu xu).
 - Dọn CSS giao diện cuộn giấy cũ của bảng Koi-Koi/kết quả hiệp (.kk-scroll, .kk-roller, .kk-paper, .kk-sheet, .kk-title, nét cọ .kk-stroke-btn, cành mai, vệt mực, con dấu, cánh hoa) cùng keyframes và mask giấy nhúng base64 không còn dùng; giữ các lớp .kk-* bảng "Bàn Chiếu" và Rút quẻ vẫn dùng. CSS nhẹ hơn khoảng 28 KB (bản min).
 - Gỡ 7 ảnh cuộn giấy cũ của Sưu tầm/Rút quẻ (paper, roller_top/bottom/body, divider, stroke_indigo/vermilion trong koikoi_scroll, chuyển vào _backup_assets) cùng CSS nền giấy, trục cuộn, đường chia, nét cọ và mask mép giấy nhúng base64 đã bị khung "Bàn Chiếu" ghi đè; khung không đổi, CSS nhẹ hơn khoảng 11 KB.
 

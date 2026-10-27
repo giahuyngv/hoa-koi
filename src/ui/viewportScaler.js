@@ -175,7 +175,19 @@ export function initViewportScaler() {
   window.addEventListener('contextmenu', preventCardMenu, { capture: true, passive: false });
   window.addEventListener('dragstart', preventCardMenu, { capture: true, passive: false });
 
+  // Bàn phím ảo (iOS/Android) làm visualViewport/innerHeight thấp đi -> nếu tính lại thì
+  // cả UI co nhỏ. Khi đang gõ vào ô nhập mà chiều rộng không đổi: giữ nguyên scale cũ.
+  const isTyping = () => {
+    const a = document.activeElement;
+    return !!(a && a.matches && a.matches(
+      'input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]), textarea, [contenteditable="true"]'));
+  };
+  let lastRawW = 0;
+
   const apply = () => {
+    const rawW = window.innerWidth;
+    if (lastRawW && rawW === lastRawW && isTyping()) return;
+    lastRawW = rawW;
     let vw, vh;
     if (isStandalone()) {
       // Không có thanh địa chỉ: lấy kích thước lớn nhất đáng tin (iOS hay báo nhỏ lúc mở)
@@ -249,6 +261,10 @@ export function initViewportScaler() {
     const mq = window.matchMedia(COMPACT_MQ);
     if (mq.addEventListener) mq.addEventListener('change', applyBurst);
   }
+  // Rời ô nhập (bàn phím đóng): đo lại sau khi bàn phím thu xong
+  document.addEventListener('focusout', () => {
+    [100, 400].forEach((ms) => setTimeout(() => { if (!isTyping()) apply(); }, ms));
+  });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) applyBurst();
   });
