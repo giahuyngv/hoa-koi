@@ -6,7 +6,7 @@
 // - Canvas tồn tại lâu dài, được gắn lại vào slot sau mỗi lần renderLeftPanel vẽ lại markup
 
 const CLIP_BASE = 'public/assets/characters/video/';
-const CLIP_VER = '2';
+const CLIP_VER = '3';
 const BAND = 16;
 const FADE_MS = 200;
 const CLIPS = ['idle', 'laugh', 'angry'];
@@ -29,6 +29,7 @@ class OpponentVideoAvatar {
     this.videos = null; // { idle, laugh, angry }
     this.urls = [];
     this.badIds = new Set();
+    this.blobCache = new Map(); // '<id>_<clip>' -> Promise<Blob>
     this.loadToken = 0;
     this.canvas = null;
     this.gl = null;
@@ -172,44 +173,83 @@ class OpponentVideoAvatar {
     return true;
   }
 
+  // Tải 1 clip (Blob), nhớ theo đối thủ để đổi qua lại / tải trước không phải tải lại
+  fetchClip(id, name) {
+    const key = `${id}_${name}`;
+    let p = this.blobCache.get(key);
+    if (!p) {
+      p = fetch(`${CLIP_BASE}${key}.mp4?v=${CLIP_VER}`).then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return new Blob([await res.arrayBuffer()], { type: 'video/mp4' });
+      });
+      p.catch(() => this.blobCache.delete(key));
+      this.blobCache.set(key, p);
+      // Giữ tối đa 4 đối thủ (12 clip) trong bộ nhớ
+      while (this.blobCache.size > 12) this.blobCache.delete(this.blobCache.keys().next().value);
+    } else {
+      this.blobCache.delete(key);
+      this.blobCache.set(key, p);
+    }
+    return p;
+  }
+
+  // Tải trước clip của đối thủ (màn loading, hội thoại cốt truyện, chọn đối thủ)
+  preload(id) {
+    if (!id || !this.enabled || this.badIds.has(id)) return;
+    CLIPS.forEach((name) => this.fetchClip(id, name).catch(() => {}));
+  }
+
+  makeVideo(name, blob) {
+    const url = URL.createObjectURL(blob);
+    this.urls.push(url);
+    const v = document.createElement('video');
+    v.muted = true;
+    v.defaultMuted = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.setAttribute('muted', '');
+    v.preload = 'auto';
+    v.loop = name === 'idle';
+    v.src = url;
+    v.addEventListener('error', () => this.fail());
+    if (name !== 'idle') v.addEventListener('ended', () => this.play('idle'));
+    return v;
+  }
+
   async load(id) {
     this.teardown(true);
     this.id = id;
     const token = ++this.loadToken;
+    this.preload(id); // 3 clip tải song song
     try {
-      const blobs = await Promise.all(
-        CLIPS.map(async (name) => {
-          const res = await fetch(`${CLIP_BASE}${id}_${name}.mp4?v=${CLIP_VER}`);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return new Blob([await res.arrayBuffer()], { type: 'video/mp4' });
-        })
-      );
+      // Clip idle về là chạy ngay; cười / bực gắn thêm khi tải xong
+      const idle = await this.fetchClip(id, 'idle');
       if (token !== this.loadToken) return;
-      const videos = {};
-      CLIPS.forEach((name, i) => {
-        const url = URL.createObjectURL(blobs[i]);
-        this.urls.push(url);
-        const v = document.createElement('video');
-        v.muted = true;
-        v.defaultMuted = true;
-        v.playsInline = true;
-        v.setAttribute('playsinline', '');
-        v.setAttribute('muted', '');
-        v.preload = 'auto';
-        v.loop = name === 'idle';
-        v.src = url;
-        v.addEventListener('error', () => this.fail());
-        if (name !== 'idle') v.addEventListener('ended', () => this.play('idle'));
-        videos[name] = v;
-      });
-      this.videos = videos;
+      this.videos = { idle: this.makeVideo('idle', idle) };
       this.cur = 'idle';
       this.prev = null;
       this.markCard(false);
       this.syncRunning();
+      await Promise.all(
+        CLIPS.filter((n) => n !== 'idle').map(async (name) => {
+          const blob = await this.fetchClip(id, name);
+          if (token !== this.loadToken || !this.videos) return;
+          this.videos[name] = this.makeVideo(name, blob);
+        })
+      );
     } catch (err) {
       if (token === this.loadToken) this.fail();
     }
+  }
+
+  // Xoá khung cũ còn đọng trên canvas (tránh hiện avatar đối thủ trước khi đổi đối thủ)
+  clearCanvas() {
+    const gl = this.gl;
+    if (!gl) return;
+    try {
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    } catch (_) {}
   }
 
   fail() {
@@ -244,6 +284,7 @@ class OpponentVideoAvatar {
     if (this.card) {
       this.card.classList.remove('has-anim-avatar', 'anim-avatar-loading');
     }
+    this.clearCanvas();
     if (this.canvas && this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
   }
 

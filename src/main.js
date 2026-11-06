@@ -202,8 +202,11 @@ class HanaKoiApp {
     // Modal toàn màn hình che canvas hạt → dừng hạt nền (burst vẫn chạy)
     const modalRoot = document.getElementById('modal-root');
     if (modalRoot) {
-      const syncParticleOcclusion = () =>
+      const syncParticleOcclusion = () => {
         this.particles.setOccluded(!!modalRoot.querySelector('.modal-backdrop, .hk-capv-backdrop'));
+        // Lá bài đang bay (đối thủ đánh / chia bài) không được nổi trên panel đang mở
+        document.body.classList.toggle('hk-modal-open', !!modalRoot.querySelector('.modal-backdrop'));
+      };
       new MutationObserver(syncParticleOcclusion).observe(modalRoot, { childList: true });
       syncParticleOcclusion();
     }
@@ -1282,7 +1285,7 @@ class HanaKoiApp {
           playerSide = myRole === 'host' ? 'left' : 'right';
           playerCard = myRole === 'host' ? cardLeft : cardRight;
           oppCard = myRole === 'host' ? cardRight : cardLeft;
-          playerWins = preWinnerRole === myRole;
+          playerWins = preWinnerRole === (myRole === 'host' ? 'p1' : 'p2');
         } else {
           const cmp = compareDealerCards(playerCard, oppCard);
           playerWins = cmp < 0;
@@ -1747,7 +1750,7 @@ class HanaKoiApp {
               <span>📜 Luật & Bảng Yaku</span>
               <span class="item-sub">Xem chi tiết</span>
             </button>
-            <button class="dropdown-item-btn" id="btn-change-opp-menu" ${isMp ? 'disabled' : ''}>
+            <button class="dropdown-item-btn" id="btn-change-opp-menu" ${isStory ? 'disabled title="Đang đấu cốt truyện: không đổi đối thủ"' : isMp ? 'disabled' : ''}>
               <span>⇄ Đổi đối thủ</span>
               <span class="item-sub">Chọn kỳ thủ khác</span>
             </button>
@@ -1991,7 +1994,7 @@ class HanaKoiApp {
         <div class="scroll-roller-bar top"></div>
         <div class="opp-portrait-clip"><img src="${opp.avatar}" alt="${oppDisplayName}" class="opponent-portrait-img" /></div>
         <div class="opp-anim-slot" aria-hidden="true"></div>
-        ${isMp ? '' : '<button class="opp-swap-btn" id="btn-swap-opp" title="Đổi đối thủ">⇄</button>'}
+        ${isMp || (this.story && this.story.isStoryMatch()) ? '' : '<button class="opp-swap-btn" id="btn-swap-opp" title="Đổi đối thủ">⇄</button>'}
 
         <div class="opponent-portrait-overlay">
           <div class="opponent-name-badge">
@@ -2043,6 +2046,8 @@ class HanaKoiApp {
 
   // Opens the opponent selector; mid-match it asks first since picking restarts the match.
   openOpponentPicker() {
+    // Trận cốt truyện: đối thủ cố định theo tháng, không cho đổi giữa trận
+    if (this.story && this.story.isStoryMatch()) return;
     const e = this.engine;
     const midMatch = !['ROUND_OVER', 'MATCH_OVER'].includes(e.phase)
       && (e.playerCaptured.length || e.aiCaptured.length || e.currentRound > 1);
@@ -3828,7 +3833,7 @@ class HanaKoiApp {
     if (!s) return '';
 
     const oppDisplayName = this.getOpponentDisplayName();
-    const oppShortName = oppDisplayName.split(' ')[0];
+    const oppShortName = (!this.isMultiplayerMatch() && this.currentOpponent.shortName) || oppDisplayName.split(' ')[0];
     const isMatchEnd = s.isMatchComplete;
     const playerWonMatch = this.engine.playerScore > this.engine.aiScore;
     const monthOf = (round) => ((round - 1) % 12) + 1;
@@ -4481,6 +4486,10 @@ class HanaKoiApp {
       btn.onclick = () => this.openCharacterViewer(btn.getAttribute('data-view-opp'));
     });
     root.querySelectorAll('[data-challenge-opp]').forEach((btn) => {
+      // Rê chuột / chạm vào nút khiêu chiến → tải trước avatar động của đối thủ đó
+      const warm = () => opponentVideoAvatar.preload(btn.getAttribute('data-challenge-opp'));
+      btn.addEventListener('pointerenter', warm, { once: true });
+      btn.addEventListener('pointerdown', warm, { once: true });
       btn.onclick = () => {
         const oppId = btn.getAttribute('data-challenge-opp');
         this.startMatchWithOpponent(oppId, this.saveData.matchRounds || 3);

@@ -618,6 +618,7 @@ export const ANIME_OPPONENTS = [
     month: 7,
     monthLabel: 'Tháng 7 ・ Hồ Chi',
     name: 'Công Chúa Tsunade',
+    shortName: 'Tsunade',
     jpName: '綱手姫 ・ 児雷也豪傑譚',
     title: 'Công Chúa Đỏ Đen Huyền Thoại (Tháng 7)',
     gender: 'Nữ',

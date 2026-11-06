@@ -11,6 +11,7 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 
 ## [Chưa phát hành]
 ### Thêm
+- Màn chính: thêm nút "Sưu tầm" và "Rút quẻ" cạnh nút Cài đặt, mở thẳng bảng tương ứng.
 - Cốt truyện "Hành trình 12 tháng" mở đủ 4 chương (tháng 4–12): thoại trước/sau trận, thử thách riêng (5 lá Thú, Cầu Yatsuhashi, Hồ điệp, Inoshikachō, Tsukimi-zake, Chén rượu cúc, Aotan, Người đội mưa, Phượng hoàng); tháng 5 Ayame tự ra đấu, có thoại kết thúc tháng 12.
 - Khung game cố định 16:9 trên PC/iPad (viền 2 bên hoặc trên dưới theo nền washi của theme), điện thoại ngang giữ co giãn như cũ; ép bằng `?frame=169|0`, đổi kiểu viền `?framebg=theme|black|pattern`.
 - Lớp phủ toàn màn hình (nền mờ/tối của hộp thoại, chọn lá đi trước, cut-in Koi-Koi, Yaku, mở đầu tháng, xem bài đã ăn) tràn ra cả viền 16:9 và vùng tai thỏ (`--hk-bleed-inset`), hộp thoại vẫn nằm trong khung UI.
@@ -39,6 +40,15 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Kết quả rút quẻ: thẻ đáp án thu nhỏ, 5 thẻ của lượt Rút 5 Quẻ nằm vừa một hàng (kèm tên và nhãn Mới/Trùng); trên điện thoại thẻ nhỏ hơn nữa.
 - Bảng kết quả tháng/chung cuộc: khung điểm "Tổng Điểm Bạn VS đối thủ" dùng nền washi be giống thẻ ghi chú phía trên.
 ### Sửa lỗi
+- PvP/Phòng mã: kẹt ngay lượt đầu (cả 2 bên chờ nhau) do bước bốc bài chọn người đi trước so vai 'p1/p2' với 'host/guest'.
+- Tên ngắn của Công Chúa Tsunade hiện "Công" (kết quả cốt truyện, avatar lữ khách, bảng kết thúc ván); thêm `shortName`.
+- Màn Tạo lữ khách: bỏ 2 nhãn "Gia huy (kamon)" và "Màu nền gia huy" (trước đó nhãn dính sát lưới chân dung).
+- Lá bài đang bay (đối thủ đánh, chia bài) nổi đè lên panel đang mở (Sưu tầm, Đối thủ…) và màn Cốt truyện: lớp bay ẩn khi có hộp thoại/màn chính.
+- Trận cốt truyện vẫn đổi được đối thủ giữa trận: ẩn nút ⇄, khoá "Đổi đối thủ" trong menu ⚙.
+- Đổi đối thủ: khung cũ của avatar động còn đọng (hiện avatar đối thủ trước, đứng im) trong lúc tải clip mới; canvas được xoá và ẩn tới khi có khung đầu.
+- Ô điểm "Bạn" và "Đối thủ" cao không bằng nhau; số điểm 2 bên thẳng hàng.
+- Khung avatar đối thủ: gradient sau tên nhân vật hở 1 dải ảnh ở mép dưới; nay phủ tới thanh cuộn dưới.
+- Bản đồ cốt truyện: chữ "Thắng tháng trước để mở" đè lên lá bài, chuyển xuống dưới hàng lá; icon khoá tháng đổi thành shape ổ khoá trắng.
 - Điện thoại (iPhone): nút "Sang tháng …" trên bảng kết quả hiệp không hiện (vẫn bấm được ở góc dưới phải) khi bảng có nhiều Yaku; hàng nút của bảng kết quả và bảng Koi-Koi/Shōbu nay nằm ngoài vùng cuộn nên luôn hiển thị.
 - PvP: máy đối thủ thấy animation đánh/bốc bài cả ở nước ăn bộ (Koi-Koi/Shōbu) và thấy hiệu ứng yaku; nước đi không còn bị bỏ qua khi đang chạy hiệu ứng; hỏi server mỗi 0,5s. Ăn yaku là gửi ngay cho đối thủ (không chờ chọn Koi-Koi/Shōbu), đối thủ thấy dòng "đang cân nhắc". Lá đánh/lật ra mà không ăn cũng có animation bay xuống chiếu ở máy đối thủ.
 - Ảnh ống Rút 5 Quẻ còn sót mảng nền trắng giữa dây tua và thân ống, nay đã xóa sạch.
@@ -51,6 +61,8 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Gỡ 7 ảnh cuộn giấy cũ của Sưu tầm/Rút quẻ (paper, roller_top/bottom/body, divider, stroke_indigo/vermilion trong koikoi_scroll, chuyển vào _backup_assets) cùng CSS nền giấy, trục cuộn, đường chia, nét cọ và mask mép giấy nhúng base64 đã bị khung "Bàn Chiếu" ghi đè; khung không đổi, CSS nhẹ hơn khoảng 11 KB.
 
 ### Tối ưu
+- Avatar động: cắt đoạn khựng (khung đứng yên ≥0,17s) trong 14 clip, nặng nhất idle Tsuruhime 1,2s mỗi vòng; giữ khung đầu/cuối mỗi đoạn để nối mượt, file nhỏ hơn ~10%, `CLIP_VER` = 3.
+- Avatar động: clip idle chạy ngay khi tải xong (cười/bực tải sau), nhớ clip của 4 đối thủ gần nhất (đổi qua lại không tải lại); tải trước clip khi đọc thoại trước trận cốt truyện và khi rê/chạm nút Khiêu chiến.
 - Avatar động đối thủ nét hơn: xuất lại 36 clip ở độ phân giải gốc (~560–710px ngang thay vì 400px), `CLIP_VER` = 2; `tools/avatar-video/process_clip2.py` thêm `--width 0` (giữ gốc) và tự dọn PNG tạm.
 
 ## [1.2.0] - 2026-10-25

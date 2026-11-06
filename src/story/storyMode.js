@@ -15,6 +15,7 @@ import {
   normalizeStoryProgress
 } from '../data/storyData.js?v=2';
 import { soundEngine } from '../audio/soundEngine.js?v=25';
+import { opponentVideoAvatar } from '../graphics/opponentVideoAvatar.js?v=1';
 
 const STORY_CARD_IMG = (id) => `./public/assets/cards/card_${id}.webp?v=26`;
 const STORY_CARD_BACK = './public/assets/backs/back_urushi_red.webp?v=26';
@@ -43,7 +44,7 @@ function storyPortraitInfo(sp, key) {
   if (!opp || opp.id !== key) return null;
   const locked = !(STORY_MONTHS[opp.month] && storyOwnedOf(sp, opp.month).length === 4);
   return {
-    name: opp.name.split(' ')[0],
+    name: opp.shortName || opp.name.split(' ')[0],
     img: opp.avatar,
     cut: opp.portrait,
     koikoi: opp.koikoiArt || opp.portrait,
@@ -92,6 +93,9 @@ export function storyAvatarHTML(saveData, size, override) {
   }
   return `<span class="st-avatar" style="--sz:${size}px"><span class="st-face" style="background-image:url('${img}');background-position:${pos}"></span>${storyMonHTML(av)}</span>`;
 }
+
+// Khoá tháng: shape ổ khoá màu trắng
+const STORY_LOCK_SVG = '<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M7 10V7.5a5 5 0 0 1 10 0V10" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><rect x="4" y="10" width="16" height="12" rx="2.5" fill="#fff"/><circle cx="12" cy="15.4" r="1.7" fill="rgba(0,0,0,.45)"/><rect x="11.1" y="15.8" width="1.8" height="3.4" rx=".9" fill="rgba(0,0,0,.45)"/></svg>';
 
 export class StoryController {
   constructor(app) {
@@ -283,6 +287,8 @@ export class StoryController {
       <div class="st-home-top">
         <div class="st-logo"><b lang="ja">花恋</b><span>HOA KOI</span><small>Đấu Bài Hoa Nhật Bản</small></div>
         <div class="st-home-right">
+          <button class="st-hub" data-open="collection" title="Bộ Sưu Tập" aria-label="Sưu tầm"><span class="st-hub-fan" aria-hidden="true">${[1, 29, 45].map((n) => `<i style="background-image:url('./public/assets/cards/card_${n}.webp')"></i>`).join('')}</span><span>Sưu tầm</span></button>
+          <button class="st-hub" data-open="gacha" title="Rút Quẻ Omikuji" aria-label="Rút quẻ"><img class="st-hub-tube" src="./public/assets/koikoi_scroll/omikuji_1.webp" alt="" draggable="false"><span>Rút quẻ</span></button>
           ${made ? `<button class="st-chip is-big" data-go="avatar">${storyAvatarHTML(sd, 60)}<span class="st-chip-tx"><small>Lữ khách</small><b>${storyEsc(this.playerName())}</b></span></button>` : ''}
           <button class="st-gear" data-panel="settings" title="Cài đặt" aria-label="Cài đặt"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#ffd98a" fill-rule="evenodd" d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.61.22l2.39-.96c.49.38 1.03.7 1.62.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.48 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2Z"/></svg></button>
         </div>
@@ -387,9 +393,9 @@ export class StoryController {
             <div class="st-fl">Chân dung <small>4 lữ khách · 12 chủ tháng mở khi thu đủ 4 lá</small></div>
             <div class="st-ports">${ports}</div>
             <div class="st-av-split">
-              <div><div class="st-fl">Gia huy (kamon)</div>
+              <div>
                 <div class="st-crests">${Object.entries(STORY_CRESTS).map(([k, c]) => `<button class="st-crest" data-crest="${k}" aria-pressed="${a.crest === k}" title="${c.name}" aria-label="${c.name}"><svg viewBox="0 0 100 100">${c.svg('#2e1a10')}</svg></button>`).join('')}</div></div>
-              <div><div class="st-fl">Màu nền gia huy</div>
+              <div>
                 <div class="st-swatches">${STORY_CREST_COLORS.map((c) => `<button class="st-sw" data-color="${c.id}" aria-pressed="${a.color === c.id}" title="${c.name}" aria-label="${c.name}" style="background:${c.bg}"></button>`).join('')}</div></div>
             </div>
           </div>
@@ -448,17 +454,19 @@ export class StoryController {
       .map(([id], i) => `<img class="${own.includes(i) ? '' : 'is-miss'}" src="${own.includes(i) ? STORY_CARD_IMG(id) : STORY_CARD_BACK}" alt="">`)
       .join('');
     return `<button class="st-month ${m === nextM ? 'is-next' : ''} ${unlocked ? '' : 'is-locked'}" data-month="${m}" ${unlocked ? '' : 'disabled'}>
-      <span class="st-month-pic"><img src="${opp.avatar}" alt="" loading="lazy">${unlocked ? '' : '<span class="st-lock">🔒</span>'}</span>
+      <span class="st-month-pic"><img src="${opp.avatar}" alt="" loading="lazy">${unlocked ? '' : `<span class="st-lock">${STORY_LOCK_SVG}</span>`}</span>
       <span class="st-month-tx"><small>Tháng ${m} · <span lang="ja">${STORY_MONTH_KANJI[m - 1]}</span> ${storyEsc(M.flower)}</small><b>${storyEsc(opp.name)}</b>
         <span class="st-stars">${storyStars(sp.stars[m] || 0)}</span>
-        <span class="st-mini">${mini}<em>${own.length}/4${own.length === 4 ? ' · đã mở avatar' : ''}</em></span></span>
-      ${m === nextM ? '<span class="st-next-tag">Tiếp theo</span>' : ''}${!unlocked ? '<span class="st-lock-tx">Thắng tháng trước để mở</span>' : ''}
+        <span class="st-mini">${mini}<em>${own.length}/4${own.length === 4 ? ' · đã mở avatar' : ''}</em></span>${!unlocked ? '<span class="st-lock-tx">Thắng tháng trước để mở</span>' : ''}</span>
+      ${m === nextM ? '<span class="st-next-tag">Tiếp theo</span>' : ''}
     </button>`;
   }
 
   // ---------------- Hội thoại ----------------
   startDialogue(m, phase) {
     this.dlg = { month: m, i: 0, phase };
+    // Đọc thoại trước trận trong lúc tải avatar động của chủ tháng
+    if (phase === 'pre' && STORY_MONTHS[m]) opponentVideoAvatar.preload(STORY_MONTHS[m].oppId);
     this.show('scene');
   }
 
@@ -519,7 +527,7 @@ export class StoryController {
     const r = this.result;
     const M = STORY_MONTHS[r.month];
     const opp = getOpponentById(M.oppId);
-    const short = opp.name.split(' ')[0];
+    const short = opp.shortName || opp.name.split(' ')[0];
     const own = storyOwnedOf(this.sp, r.month);
     const line = (ok, t, d) =>
       `<div class="kk-yaku-line st-line ${ok ? '' : 'is-off'}"><span class="kk-yaku-name">${t}<small>${storyEsc(d)}</small></span><span class="kk-yaku-pts">${ok ? '+1 ★' : '—'}</span></div>`;
@@ -583,6 +591,14 @@ export class StoryController {
     if ('close' in ds) { this.panel = null; this.render(); return; }
     if (ds.go) { this.show(ds.go); return; }
     if (ds.panel) { this.panel = ds.panel; this.render(); return; }
+    if (ds.open === 'collection' || ds.open === 'gacha') { // Màn chính: mở bảng Sưu tầm / Rút quẻ đè lên, đóng là về lại
+      const app = this.app;
+      app.settingsMenuOpen = false;
+      app.activeModal = ds.open;
+      app.renderTopNav();
+      app.renderActiveModal();
+      return;
+    }
     if (ds.mode === 'story') { this.show(sp.started ? 'map' : 'intro'); return; }
     if (ds.mode === 'pve' || ds.mode === 'pvp' || ds.mode === 'custom') { this.app.enterModeFromHome(ds.mode); return; } // Màn chính vẫn làm nền, vào trận mới ẩn
     if ('start' in ds) {
