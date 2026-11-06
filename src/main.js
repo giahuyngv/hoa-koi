@@ -26,6 +26,8 @@ import { createHacRig } from './graphics/hacRig.js?v=1';
 import { ParticleSystem25D } from './graphics/particles25d.js?v=27';
 import { playYakuReveal, warmYakuRevealAssets } from './graphics/yakuReveal.js?v=25';
 import { cardAnimator } from './graphics/cardAnimator.js?v=25';
+import { opponentVideoAvatar } from './graphics/opponentVideoAvatar.js?v=1';
+import { applyAvatarTune } from './ui/avatarTune.js?v=1';
 import { soundEngine, BGM_TRACKS } from './audio/soundEngine.js?v=25';
 import { KoiKoiEngine, compareDealerCards } from './engine/koiKoiEngine.js?v=25';
 import { multiplayerService } from './services/multiplayerService.js?v=25';
@@ -260,11 +262,18 @@ class HanaKoiApp {
     // chọn đối thủ / vào phòng PvP sẽ tự mở hiệp; đóng bảng mà không chọn thì mở hiệp với đối thủ hiện tại.
     multiplayerService.leaveCurrentRoom();
     this.gameMode = 'pve';
-    this.bumpMatchToken();
-    this.engine.startNewMatch(this.saveData.matchRounds || 3);
-    this._openingPending = true;
-    // Lần đầu đấu máy: hướng dẫn của Ayame trước (giống lúc mở game trước đây)
-    this.activeModal = mode === 'pve' && !this.saveData.tutorialSeen ? null : mode === 'pvp' ? 'pvp_lobby' : mode === 'custom' ? 'custom_room' : 'opponents';
+    // Không chia trận mới ở đây: chọn đối thủ (startMatchWithOpponent) / tạo-vào phòng PvP tự chia bài.
+    // Lần đầu đấu máy: hướng dẫn của Ayame trước (giống lúc mở game trước đây), đóng hướng dẫn thì mở hiệp.
+    // Còn lại: đóng bảng (x) mà không chọn gì → quay lại Màn chính (xem renderActiveModal).
+    const firstTutorial = mode === 'pve' && !this.saveData.tutorialSeen;
+    this._openingPending = !firstTutorial;
+    if (firstTutorial) {
+      this.story.hide();
+      this.bumpMatchToken();
+      this.engine.startNewMatch(this.saveData.matchRounds || 3);
+      this._pendingRoundOpening = true;
+    }
+    this.activeModal = firstTutorial ? null : mode === 'pvp' ? 'pvp_lobby' : mode === 'custom' ? 'custom_room' : 'opponents';
     this.renderAll();
     if (!this.activeModal) this.maybeShowFirstTutorial();
   }
@@ -431,6 +440,8 @@ class HanaKoiApp {
       guestJustJoined
     }) => {
       this.gameMode = mode || 'custom';
+      this._openingPending = false; // vào phòng PvP → không quay về Màn chính khi bảng đóng
+      if (this.story && this.story.isOpen()) this.story.hide();
       this.activeModal = null;
       this.mpWaitingHost = false;
       this.customRoomError = '';
@@ -897,6 +908,8 @@ class HanaKoiApp {
 
   // opts.story: trận cốt truyện → không ghi đè đối thủ / số hiệp đã chọn cho chế độ Đấu máy
   startMatchWithOpponent(opponentId, rounds = 3, opts = {}) {
+    this._openingPending = false; // đã chọn đối thủ → không quay về Màn chính khi bảng đóng
+    if (this.story && this.story.isOpen()) this.story.hide();
     multiplayerService.leaveCurrentRoom();
     this.gameMode = 'pve';
     if (this.story) this.story.onMatchStarted(opponentId, !!opts.story);
@@ -1976,7 +1989,8 @@ class HanaKoiApp {
       <!-- 3:4 Kakejiku Hanging Scroll Character Portrait -->
       <div class="opponent-vn-card okami-kakejiku">
         <div class="scroll-roller-bar top"></div>
-        <img src="${opp.avatar}" alt="${oppDisplayName}" class="opponent-portrait-img" />
+        <div class="opp-portrait-clip"><img src="${opp.avatar}" alt="${oppDisplayName}" class="opponent-portrait-img" /></div>
+        <div class="opp-anim-slot" aria-hidden="true"></div>
         ${isMp ? '' : '<button class="opp-swap-btn" id="btn-swap-opp" title="Đổi đối thủ">⇄</button>'}
 
         <div class="opponent-portrait-overlay">
@@ -2016,6 +2030,10 @@ class HanaKoiApp {
       </div>
     `);
     if (!leftChanged) return;
+    // Avatar động: gắn lại canvas bền vững vào slot mới (markup vừa bị thay)
+    const hasClip = !!opp.id && typeof opp.avatar === 'string' && opp.avatar.includes(`/characters/${opp.id}.`);
+    applyAvatarTune(left.querySelector('.opponent-vn-card'), opp.id);
+    opponentVideoAvatar.attach(left.querySelector('.opponent-vn-card'), hasClip ? opp.id : null);
     const swapBtn = left.querySelector('#btn-swap-opp');
     if (swapBtn) swapBtn.onclick = (e) => {
       e.stopPropagation();
@@ -2905,6 +2923,8 @@ class HanaKoiApp {
     const prev = new Set((yakuCheck.prevSignature || '').split('|'));
     const fresh = evalRes.yakus.filter((y) => !prev.has(`${y.id}:${y.points}`));
     const isAi = actor === 'ai';
+    // Avatar động: đối thủ ăn yaku -> cười; người chơi ăn yaku -> bực
+    opponentVideoAvatar.play(isAi ? 'laugh' : 'angry');
     this.yakuRevealActive = true;
     // Vẽ lại bàn (lá vừa ăn vào khay) nhưng giữ modal Koi-Koi đóng tới khi popup xong
     this.renderAll();
@@ -3490,10 +3510,13 @@ class HanaKoiApp {
     if (!this.activeModal) {
       delete root.dataset.activeModalKey;
       root.replaceChildren();
-      // Vào Đấu máy / PvP từ Màn chính rồi đóng bảng mà không chọn gì → mở hiệp với đối thủ hiện tại
-      if (this._openingPending && !(this.story && this.story.isOpen())) {
+      // Vào Đấu máy / PvP / Phòng mã từ Màn chính rồi đóng bảng mà không chọn gì → quay lại Màn chính
+      // (rời phòng/hàng chờ PvP nếu đang tìm trận; bàn chơi chia sẵn phía sau, chưa mở hiệp)
+      if (this._openingPending) {
         this._openingPending = false;
-        this.runRoundOpeningSequence();
+        multiplayerService.leaveCurrentRoom();
+        this.gameMode = 'pve';
+        if (!this.story.isOpen()) this.story.showHome();
       }
       return;
     }

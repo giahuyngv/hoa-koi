@@ -13,7 +13,7 @@ import {
   STORY_CREST_COLORS,
   STORY_TRAVELERS,
   normalizeStoryProgress
-} from '../data/storyData.js?v=1';
+} from '../data/storyData.js?v=2';
 import { soundEngine } from '../audio/soundEngine.js?v=25';
 
 const STORY_CARD_IMG = (id) => `./public/assets/cards/card_${id}.webp?v=26`;
@@ -276,7 +276,7 @@ export class StoryController {
     const sd = this.app.saveData;
     const sp = this.sp;
     const made = sp.started;
-    const storySub = made ? `Chương Xuân · đã thắng ${sp.cleared.length}/3 tháng` : 'Đi qua 12 tháng, thu lại bộ bài hoa';
+    const storySub = made ? `Đã thắng ${sp.cleared.length}/12 tháng` : 'Đi qua 12 tháng, thu lại bộ bài hoa';
     const face = (id) => `<span style="background-image:url('${getOpponentById(id).avatar}')"></span>`;
     const version = typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'dev';
     return `<section class="st-screen st-home">
@@ -345,7 +345,7 @@ export class StoryController {
         <div class="tut-guide"><div class="tut-portrait"><img src="${ayame.avatar}" alt="Ayame Shirakawa"></div>
           <div class="tut-nameplate"><strong>Ayame Shirakawa</strong><span>Hồ Tiên Cầu Yatsuhashi · người dẫn đường</span></div></div>
         <div class="tut-main">
-          <div class="tut-topline"><span class="tut-step-kicker">Cốt truyện · Chương Xuân</span><button class="tut-skip-btn" data-go="home">Về màn chính</button></div>
+          <div class="tut-topline"><span class="tut-step-kicker">Cốt truyện · Bốn mùa</span><button class="tut-skip-btn" data-go="home">Về màn chính</button></div>
           <div class="st-big-jp" lang="ja">花の旅</div>
           <div class="tut-bubble"><h3>Hành trình 12 tháng</h3>
             <p>Bộ bài hoa của xứ này đã bị xé thành mười hai phần. Mỗi tinh linh của một tháng giữ bốn lá và chỉ trả lại cho <b>người thắng họ</b>.</p>
@@ -428,7 +428,7 @@ export class StoryController {
         <div class="tt-body">
           <div class="st-collect"><span class="tut-step-kicker">Bộ bài hoa thu lại</span><div class="st-bar"><i style="width:${(this.cardsCollected() / 48) * 100}%"></i></div><b>${this.cardsCollected()}/48 lá</b></div>
           <div class="st-seasons">${seasons}</div>
-          ${done ? `<p class="st-done">Đã thắng cả 3 tháng mùa Xuân. ${this.cardsCollected() < 12 ? 'Đấu lại để thu đủ lá còn thiếu và mở avatar. ' : ''}Chương Hạ sẽ mở ở bản sau.</p>` : ''}
+          ${done ? `<p class="st-done">Đã đi hết 12 tháng! ${this.cardsCollected() < 48 ? `Còn ${48 - this.cardsCollected()} lá: đấu lại để thu đủ và mở avatar chủ tháng.` : 'Bộ bài hoa 48 lá đã liền một mối.'}</p>` : ''}
         </div>
       </div>
     </section>`;
@@ -477,8 +477,8 @@ export class StoryController {
     const last = i === lines.length - 1;
     const nextLabel = last ? (phase === 'pre' ? 'Vào trận ▸' : 'Về bản đồ ▸') : 'Tiếp ▸';
     const meAv = getStoryPlayerAvatar(sd);
-    const left = me
-      ? `<div class="st-actor is-left is-on"><img src="${meAv.cut}" alt="${storyEsc(name)}"></div>`
+    const left = me || M.oppId === 'ayame'
+      ? `<div class="st-actor is-left ${me ? 'is-on' : ''}"><img src="${meAv.cut}" alt="${storyEsc(this.playerName())}"></div>`
       : `<div class="st-actor is-left ${ay ? 'is-on' : ''}"><img src="${ayame.portrait}" alt="Ayame"></div>`;
     return `<section class="st-screen st-scene">
       ${this.topbar(`Tháng ${month} · ${storyEsc(opp.title.replace(/\s*\(Tháng \d+\)/, ''))}`, STORY_MONTH_KANJI[month - 1])}
@@ -584,7 +584,7 @@ export class StoryController {
     if (ds.go) { this.show(ds.go); return; }
     if (ds.panel) { this.panel = ds.panel; this.render(); return; }
     if (ds.mode === 'story') { this.show(sp.started ? 'map' : 'intro'); return; }
-    if (ds.mode === 'pve' || ds.mode === 'pvp' || ds.mode === 'custom') { this.hide(); this.app.enterModeFromHome(ds.mode); return; }
+    if (ds.mode === 'pve' || ds.mode === 'pvp' || ds.mode === 'custom') { this.app.enterModeFromHome(ds.mode); return; } // Màn chính vẫn làm nền, vào trận mới ẩn
     if ('start' in ds) {
       sp.started = true;
       this.app.persistSave();

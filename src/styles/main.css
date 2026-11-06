@@ -4014,7 +4014,7 @@ body.dark-mode {
 
 /* 5. Left Column: 3:4 Kakejiku Hanging Scroll Character Portrait */
 .game-layout {
-  grid-template-columns: 312px 1fr 298px !important;
+  grid-template-columns: var(--opp-col-w, 396px) minmax(0, 1fr) 298px !important;
   padding: 6px 18px 14px !important;
   height: calc(calc(100 * var(--avh, 1vh)) - 66px) !important;
 }
@@ -4035,7 +4035,7 @@ body.dark-mode {
 .opponent-vn-card .opponent-portrait-img {
   border-radius: 5px;
   object-fit: cover !important;
-  object-position: center 6% !important;
+  object-position: var(--opp-pos-x, 65%) var(--opp-pos-y, 8%) !important;
 }
 
 .opponent-portrait-overlay {
@@ -6333,9 +6333,24 @@ body.dark-mode .tut-dot.done {
 /* Ghim #app vào góc màn hình để thanh địa chỉ mobile không đẩy lệch / lẹm UI */
 #app {
   position: fixed;
-  top: 0;
+  top: var(--app-top, 0px);
   left: var(--app-left, 0px);
 }
+/* Khung cố định 16:9 (viewportScaler ?frame=169): viền 2 bên / trên dưới */
+.hk-frame-bar { position: fixed; z-index: 30; pointer-events: none; }
+html[data-framebg="theme"] .hk-frame-bar { display: none !important; }
+html[data-framebg="black"] .hk-frame-bar { background: #000; }
+html[data-framebg="pattern"] .hk-frame-bar {
+  background-color: #120d1a;
+  background-image:
+    radial-gradient(circle at 50% 100%, transparent 38%, rgba(242, 193, 90, 0.10) 39%, rgba(242, 193, 90, 0.10) 41%, transparent 42%, transparent 52%, rgba(242, 193, 90, 0.07) 53%, rgba(242, 193, 90, 0.07) 55%, transparent 56%);
+  background-size: 48px 24px;
+  background-attachment: fixed;
+}
+html[data-framebg="pattern"] .hk-frame-bar.is-t { box-shadow: inset 0 -2px 0 rgba(242, 193, 90, 0.6); }
+html[data-framebg="pattern"] .hk-frame-bar.is-b { box-shadow: inset 0 2px 0 rgba(242, 193, 90, 0.6); }
+html[data-framebg="pattern"] .hk-frame-bar.is-l { box-shadow: inset -2px 0 0 rgba(242, 193, 90, 0.6); }
+html[data-framebg="pattern"] .hk-frame-bar.is-r { box-shadow: inset 2px 0 0 rgba(242, 193, 90, 0.6); }
 /* Nền phủ cả vùng tai thỏ / dưới thanh home khi viewport-fit=cover */
 html, body { min-height: 100%; background-attachment: fixed; }
 html.hk-standalone, html.hk-standalone body { position: fixed; inset: 0; overflow: hidden; }
@@ -6934,10 +6949,18 @@ body.layout-compact .dealer-card-info {
   position: absolute;
   inset: 0;
   z-index: 90;
+}
+/* Nền màn chính tràn ra cả viền 16:9 / tai thỏ; nội dung (.st-screen) vẫn trong khung */
+#story-root::before {
+  content: '';
+  position: absolute;
+  inset: var(--hk-bleed-inset, 0);
+  z-index: -1;
+  pointer-events: none;
   background: #f5ebd6 url('../../public/assets/bg_ukiyo_day.webp?v=1') center / cover no-repeat;
 }
 #story-root[hidden] { display: none; }
-body.dark-mode #story-root { background-color: #1d1628; background-image: url('../../public/assets/bg_ukiyo_night.webp?v=1'); }
+body.dark-mode #story-root::before { background-color: #1d1628; background-image: url('../../public/assets/bg_ukiyo_night.webp?v=1'); }
 /* Màn chính đang mở: ẩn hạt bay & khung trang trí của bàn phía sau */
 body.hk-story-open #particle-canvas { opacity: 0; }
 .st-toast { display: none; }
@@ -7491,3 +7514,117 @@ body.layout-compact .st-gear svg { width: 30px; height: 30px; }
 .st-home .st-face { box-shadow: 0 0 0 1.5px var(--tt-gold), 0 0 0 3px var(--tt-lacq); }
 .st-home .st-mode-cta { border-width: 1.5px; }
 body.layout-compact .st-home .st-mode { border-width: 1.5px; }
+
+/* ==========================================================================
+   AVATAR ĐỘNG ĐỐI THỦ (src/graphics/opponentVideoAvatar.js)
+   - .anim-avatar-loading: ẩn ảnh tĩnh, hiện khung chờ <id>_idle_rest.webp (cùng khung với clip)
+   - .has-anim-avatar: canvas WebGL đã vẽ khung đầu -> bỏ khung chờ
+   - perf-low / lỗi: không có class nào -> ảnh tĩnh như cũ
+   ========================================================================== */
+.opp-anim-slot {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: none;
+  pointer-events: none;
+  border-radius: 5px;
+  overflow: hidden;
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* 3 lớp: nền cảnh (::before) / khung chờ nhân vật (::after) / video (canvas).
+   Nền và nhân vật chỉnh riêng cho từng đối thủ: --opp-bg-* và --opp-char-* (src/ui/avatarTune.js) */
+.opp-anim-slot::before,
+.opp-anim-slot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: var(--opp-pos-x, 65%) var(--opp-pos-y, 8%);
+  background-size: cover;
+}
+.opp-anim-slot::before {
+  /* Nền: cao bằng khung x cỡ (ảnh nền 3:4 rộng hơn khung -> phủ kín), kéo ảnh bên trong khung
+     bằng background-position nên phần bị cắt sẽ lộ ra khi dịch, không hở mép */
+  background-image: var(--opp-bg, none);
+  background-size: auto calc(var(--opp-bg-scale, 1) * 100%);
+  background-position:
+    calc(var(--opp-pos-x, 65%) + var(--opp-bg-x, 0%))
+    calc(var(--opp-pos-y, 8%) + var(--opp-bg-y, 0%));
+}
+.opp-anim-slot::after {
+  z-index: 1;
+  background-image: var(--opp-rest, none);
+}
+/* Nhân vật hiện trọn hình (contain, đứng đáy khung): dịch/thu nhỏ không lộ mép bị cắt sẵn */
+.opp-anim-slot::after { background-size: contain; background-position: 50% 100%; }
+.opp-anim-slot .opp-anim-canvas { object-fit: contain; object-position: 50% 100%; }
+.opp-anim-slot::after,
+.opp-anim-slot .opp-anim-canvas {
+  transform: translate(var(--opp-char-x, 0%), var(--opp-char-y, 0%)) scale(var(--opp-char-scale, 1));
+  transform-origin: 50% 100%;
+}
+.opp-anim-slot .opp-anim-canvas { position: relative; z-index: 2; }
+.opponent-vn-card.has-anim-avatar .opp-anim-slot::after { display: none; }
+/* Ảnh tĩnh (đồ hoạ nhẹ / chưa có video): giữ nguyên, chỉ cắt theo khung */
+.opp-portrait-clip { position: absolute; inset: 0; overflow: hidden; border-radius: 5px; }
+.opponent-vn-card.anim-avatar-loading .opp-anim-slot,
+.opponent-vn-card.has-anim-avatar .opp-anim-slot { display: block; }
+.opponent-vn-card.anim-avatar-loading .opponent-portrait-img,
+.opponent-vn-card.has-anim-avatar .opponent-portrait-img { visibility: hidden; }
+.opp-anim-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--opp-pos-x, 65%) var(--opp-pos-y, 8%);
+}
+.opponent-vn-card:hover .opp-anim-slot { transform: scale(1.04); }
+.opponent-vn-card.tease-reacting .opp-anim-slot {
+  animation: portraitTeaseBounce 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+body.perf-low .opp-anim-slot { display: none !important; }body.perf-low .opponent-vn-card .opponent-portrait-img { visibility: visible !important; }
+
+/* Bảng chỉnh khung avatar đối thủ (mở bằng ?avataredit=1) */
+.hk-avatar-tuner {
+  position: fixed; right: 12px; bottom: 12px; z-index: 2147483000;
+  width: 260px; padding: 12px 14px; border-radius: 10px;
+  background: rgba(29, 22, 40, 0.94); color: #fff; font: 13px/1.4 system-ui, sans-serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); border: 1px solid #ffd166; transform: translateZ(9999px);
+}
+.hk-avatar-tuner b { color: #ffd166; display: block; margin-bottom: 6px; }
+.hk-avatar-tuner label { display: block; margin: 6px 0 2px; }
+.hk-avatar-tuner input[type=range] { width: 100%; }
+.hk-avatar-tuner { max-height: calc(100vh - 24px); overflow-y: auto; }
+.hk-avatar-tuner small { display: block; margin-top: 8px; color: #cbb8e0; }
+.hk-avatar-tuner code { white-space: pre-wrap; display: block; margin: 8px 0; padding: 6px; background: #120d1a; border-radius: 6px; font-size: 11px; word-break: break-all; color: #ffd166; }
+.hk-avatar-tuner button { margin-right: 6px; padding: 4px 10px; border-radius: 6px; border: 0; background: #c8371f; color: #fff; cursor: pointer; }
+
+/* ==========================================================================
+   Lớp phủ toàn màn hình tràn ra ngoài khung #app (viền 16:9, tai thỏ, thanh home)
+   --sa-* (px màn hình) do viewportScaler.js tính; #app bị scale nên chia --ui-scale
+   ========================================================================== */
+:root {
+  --hk-bleed-inset:
+    calc(var(--sa-t, 0px) / var(--ui-scale, 1) * -1)
+    calc(var(--sa-r, 0px) / var(--ui-scale, 1) * -1)
+    calc(var(--sa-b, 0px) / var(--ui-scale, 1) * -1)
+    calc(var(--sa-l, 0px) / var(--ui-scale, 1) * -1);
+}
+html .modal-backdrop,
+html .cutin-overlay,
+html .tt-viewer,
+html .yaku-reveal-overlay,
+html .month-intro-overlay,
+html .dealer-draw-overlay,
+html .st-backdrop,
+html .hk-capv-backdrop {
+  inset: var(--hk-bleed-inset) !important;
+}
+/* Hộp thoại vẫn nằm gọn trong khung UI: backdrop tràn viền nhưng đệm thêm đúng phần tràn */
+html .modal-backdrop {
+  padding:
+    calc(20px + var(--sa-t, 0px) / var(--ui-scale, 1))
+    calc(20px + var(--sa-r, 0px) / var(--ui-scale, 1))
+    calc(20px + var(--sa-b, 0px) / var(--ui-scale, 1))
+    calc(20px + var(--sa-l, 0px) / var(--ui-scale, 1));
+}

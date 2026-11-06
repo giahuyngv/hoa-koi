@@ -11,6 +11,13 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 
 ## [Chưa phát hành]
 ### Thêm
+- Cốt truyện "Hành trình 12 tháng" mở đủ 4 chương (tháng 4–12): thoại trước/sau trận, thử thách riêng (5 lá Thú, Cầu Yatsuhashi, Hồ điệp, Inoshikachō, Tsukimi-zake, Chén rượu cúc, Aotan, Người đội mưa, Phượng hoàng); tháng 5 Ayame tự ra đấu, có thoại kết thúc tháng 12.
+- Khung game cố định 16:9 trên PC/iPad (viền 2 bên hoặc trên dưới theo nền washi của theme), điện thoại ngang giữ co giãn như cũ; ép bằng `?frame=169|0`, đổi kiểu viền `?framebg=theme|black|pattern`.
+- Lớp phủ toàn màn hình (nền mờ/tối của hộp thoại, chọn lá đi trước, cut-in Koi-Koi, Yaku, mở đầu tháng, xem bài đã ăn) tràn ra cả viền 16:9 và vùng tai thỏ (`--hk-bleed-inset`), hộp thoại vẫn nằm trong khung UI.
+- Nền Màn chính / Cốt truyện (`#story-root::before`) tràn ra cả viền, chỉ còn 1 lớp nền.
+- Khung avatar động đối thủ: nền và nhân vật chỉnh riêng cỡ/vị trí cho từng đối thủ (`AVATAR_TUNE` trong `src/ui/avatarTune.js`, đã đặt cho 12 nhân vật), nhân vật hiện trọn hình đứng đáy khung; bảng chỉnh `?avataredit=1`. Cột avatar 396px. Ảnh tĩnh (đồ hoạ nhẹ) giữ nguyên.
+- Avatar động đối thủ (khung chân dung bên trái): clip idle lặp, cười khi đối thủ ăn yaku, bực khi bạn ăn yaku, hoà 0,2s rồi về idle; ghép alpha bằng WebGL (`src/graphics/opponentVideoAvatar.js`), chỉ nạp 3 clip của đối thủ đang đấu (`public/assets/characters/video/`), dừng khi ở Màn chính; perf-low/lỗi/`file://` thì giữ ảnh tĩnh. Server thêm MIME `.mp4`.
+- Avatar động có nền cảnh riêng cho 12 đối thủ (vẽ lại cảnh của chân dung cũ, bỏ nhân vật): `public/assets/characters/video/<id>_bg.webp`, nằm dưới clip.
 - Thành tựu mở món sưu tầm (không bán, không có trong gacha): Ngũ Quang → Vảy Rồng Hoàng Kim, Gan Cùng Mình (2 lần Koi-Koi vẫn thắng) → Da Cá Mập Bạc, Chuỗi Hoa (thắng 5 trận liên tiếp) → Sương Hoàng Hôn, Xuân Viên Mãn (9/9 sao Mùa Xuân) → Mây Lành Chàm, Đại Thắng (thắng 1 tháng ≥ 15 điểm) → Long Vương Hoàng Gia, Ánh Trăng Cuối (hạ Kaguya trận 12 tháng) → Nguyệt Cung, Bách Chiến (hạ đủ 12 đối thủ) → skin Phù Thế Ánh Trăng. Kaguya/Tsunade/Amaterasu không còn tặng các món này khi thắng. Lưu ở `saveData.achievements`, `winStreak`, `gachaPity`.
 - Màn chính khi mở game (sau loading): logo 花恋 HOA KOI và 4 ô Cốt truyện / Đấu máy / PvP / Cài đặt; nút "Màn chính" trên thanh trên và menu ≡ để quay lại.
 - Chế độ Cốt truyện "Hành trình 12 tháng" (chương Xuân, tháng 1–3): Ayame dẫn truyện, tạo lữ khách (4 chân dung + 6 gia huy + màu nền), bản đồ 4 mùa, hội thoại trước/sau trận, thử thách tháng, trận Koi-Koi thật với AI chủ tháng; sao (thắng / thử thách / cách biệt ≥5) đổi thành lượt bốc lá của tháng, lá trùng thành mảnh hoa, đủ 4 lá mở avatar chủ tháng. Lưu ở `saveData.storyProgress`.
@@ -22,6 +29,7 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Mặt lưng mới "Lá Gai Đêm (Asanoha Kuro)" (SR, 800 xu, cửa hàng/gacha): sơn mài đen, hoa văn lá gai Asanoha in nổi; mặt lưng này không phủ lớp sóng mờ (`noWagara`).
 - 13 mặt lưng mới vẽ kiểu sơn mài in chìm/nổi (cửa hàng/gacha, không phủ lớp sóng mờ): Mây Lành Chàm, Sóng Biển Đỏ Đô, Mai Rùa Trà Xanh, Thất Bảo Tử Đằng, Lông Tên Đêm, Anh Đào Phấn Hồng, Vảy Rồng Hoàng Kim, Bàn Cờ Hạt Dẻ, Hơi Nước Ngọc Bích, Da Cá Mập Bạc, Sương Hoàng Hôn, Đan Tre Rêu Xanh, Lá Gai Ngà Trắng. Ảnh ở `public/assets/backs/`.
 ### Thay đổi
+- Màn chính: bấm Đấu máy / PvP / Phòng mã chỉ mở bảng tương ứng trên nền Màn chính, không tự vào trận mới; đóng (x) mà không chọn thì quay lại Màn chính (rời hàng chờ/phòng PvP nếu đang tìm).
 - Sưu tầm: bảng giá mới khó hơn (Cổ Điển ×9, Hiếm ×12, Sử Thi ×13,5, Huyền Thoại ×15 so với giá cũ; vd mặt lưng Hiếm 450 → 5.400 xu). Gacha 1.200 xu/quẻ, 10 quẻ 10.800 xu (chắc chắn ≥ 1 Sử Thi); rút theo bậc cố định 30/45/20/5%, quẻ thứ 40 liên tiếp chắc chắn ra Huyền Thoại, hoàn trùng theo độ hiếm (180–1.800 xu). Đồ và Xu người chơi đã có giữ nguyên.
 - Thanh trên cùng trận (mobile/compact): pill Hiệp/Tháng luôn đúng tâm (grid 1fr·auto·1fr), chip Đối thủ sát trái pill, chip Bạn sát phải pill, tên không xuống dòng, nút Yaku dính mép phải.
 - Ô Lữ khách (avatar + tên) ở góc trên phải màn chính rộng hơn: khoảng trống ngang trước/sau chữ tăng gấp 3 (desktop gap 30px/phải 48px, mobile 18px/30px).
@@ -41,6 +49,9 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Bỏ nút "+2,000 Xu Trải Nghiệm" trong panel Sưu tầm (cùng lời nhắc tới nút này trong thông báo thiếu xu).
 - Dọn CSS giao diện cuộn giấy cũ của bảng Koi-Koi/kết quả hiệp (.kk-scroll, .kk-roller, .kk-paper, .kk-sheet, .kk-title, nét cọ .kk-stroke-btn, cành mai, vệt mực, con dấu, cánh hoa) cùng keyframes và mask giấy nhúng base64 không còn dùng; giữ các lớp .kk-* bảng "Bàn Chiếu" và Rút quẻ vẫn dùng. CSS nhẹ hơn khoảng 28 KB (bản min).
 - Gỡ 7 ảnh cuộn giấy cũ của Sưu tầm/Rút quẻ (paper, roller_top/bottom/body, divider, stroke_indigo/vermilion trong koikoi_scroll, chuyển vào _backup_assets) cùng CSS nền giấy, trục cuộn, đường chia, nét cọ và mask mép giấy nhúng base64 đã bị khung "Bàn Chiếu" ghi đè; khung không đổi, CSS nhẹ hơn khoảng 11 KB.
+
+### Tối ưu
+- Avatar động đối thủ nét hơn: xuất lại 36 clip ở độ phân giải gốc (~560–710px ngang thay vì 400px), `CLIP_VER` = 2; `tools/avatar-video/process_clip2.py` thêm `--width 0` (giữ gốc) và tự dọn PNG tạm.
 
 ## [1.2.0] - 2026-10-25
 ### Thêm

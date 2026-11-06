@@ -25,6 +25,42 @@ function detectLayoutCompact() {
   return !!(window.matchMedia && window.matchMedia(COMPACT_MQ).matches);
 }
 
+// Khung 16:9 cố định: mặc định bật trên PC/iPad; điện thoại ngang (layout-compact) giữ co giãn.
+// Ép bằng link: ?frame=169 (bật) / ?frame=0 (tắt). Kiểu viền: ?framebg=theme|black|pattern
+function detectFrameLock(compact) {
+  const m = /[?&]frame=(169|0)\b/.exec(location.search);
+  if (m) return m[1] === '169';
+  return !compact;
+}
+(function initFrameBg() {
+  const m = /[?&]framebg=(theme|black|pattern)\b/.exec(location.search);
+  document.documentElement.setAttribute('data-framebg', m ? m[1] : 'theme');
+})();
+
+// 4 dải viền phủ ngoài khung (che cả trang trí/cánh hoa tràn ra ngoài), không chặn chạm
+let frameBars = null;
+function updateFrameBars(lock, x, y, w, h) {
+  if (!lock) {
+    if (frameBars) frameBars.forEach((b) => { b.style.display = 'none'; });
+    return;
+  }
+  if (!frameBars) {
+    frameBars = ['t', 'b', 'l', 'r'].map((side) => {
+      const el = document.createElement('div');
+      el.className = `hk-frame-bar is-${side}`;
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+      return el;
+    });
+  }
+  const [t, b, l, r] = frameBars;
+  const set = (el, css) => { el.style.cssText = css; };
+  set(t, `left:0;right:0;top:0;height:${y}px`);
+  set(b, `left:0;right:0;top:${y + h}px;bottom:0`);
+  set(l, `top:${y}px;height:${h}px;left:0;width:${x}px`);
+  set(r, `top:${y}px;height:${h}px;left:${x + w}px;right:0`);
+}
+
 const isStandalone = () =>
   window.navigator.standalone === true ||
   (window.matchMedia && window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches);
@@ -204,7 +240,22 @@ export function initViewportScaler() {
     vh = Math.floor(vh - sa.b);
     if (vw <= 0 || vh <= 0) return;
 
+    // Khung cố định 16:9 (letterbox/pillarbox), căn giữa vùng an toàn
     const compact = detectLayoutCompact();
+    const lock = detectFrameLock(compact);
+    root.classList.toggle('hk-frame-169', lock);
+    let offX = 0, offY = 0;
+    const availW = vw, availH = vh;
+    if (lock) {
+      const fw = Math.floor(Math.min(vw, vh * 16 / 9));
+      const fh = Math.floor(fw * 9 / 16);
+      offX = Math.floor((vw - fw) / 2);
+      offY = Math.floor((vh - fh) / 2);
+      vw = fw;
+      vh = fh;
+    }
+    updateFrameBars(lock, sa.l + offX, offY, vw, vh);
+
     const prevCompact = document.body.classList.contains('layout-compact');
     document.body.classList.toggle('layout-compact', compact);
     window.HK_COMPACT = compact;
@@ -217,10 +268,14 @@ export function initViewportScaler() {
     root.style.setProperty('--ui-scale', String(scale));
     root.style.setProperty('--app-w', `${vw / scale}px`);
     root.style.setProperty('--app-h', `${vh / scale}px`);
-    root.style.setProperty('--app-left', `${sa.l}px`);
-    root.style.setProperty('--sa-l', `${sa.l}px`);
-    root.style.setProperty('--sa-r', `${sa.r}px`);
-    root.style.setProperty('--sa-b', `${sa.b}px`);
+    root.style.setProperty('--app-left', `${sa.l + offX}px`);
+    root.style.setProperty('--app-top', `${offY}px`);
+    // Phần màn hình nằm ngoài #app (tai thỏ / thanh home / viền 16:9), px màn hình:
+    // lớp phủ toàn màn hình (mờ/tối nền, cut-in...) dùng --hk-bleed-inset để tràn ra hết
+    root.style.setProperty('--sa-l', `${sa.l + offX}px`);
+    root.style.setProperty('--sa-r', `${sa.r + (availW - offX - vw)}px`);
+    root.style.setProperty('--sa-b', `${sa.b + (availH - offY - vh)}px`);
+    root.style.setProperty('--sa-t', `${offY}px`);
     root.classList.toggle('hk-scaled', scale < 1);
     window.HK_UI_SCALE = scale;
     if (prevCompact !== compact) {

@@ -30,10 +30,12 @@ const files = [
   'src/graphics/particles25d.js',
   'src/graphics/yakuReveal.js',
   'src/graphics/hacRig.js',
+  'src/graphics/opponentVideoAvatar.js',
   'src/audio/soundEngine.js',
   'src/engine/koiKoiEngine.js',
   'src/services/multiplayerService.js',
   'src/ui/viewportScaler.js',
+  'src/ui/avatarTune.js',
   'src/data/storyData.js',
   'src/story/storyMode.js',
   'src/main.js'

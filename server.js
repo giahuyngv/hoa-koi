@@ -61,7 +61,8 @@ const MIME_TYPES = Object.freeze({
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
-  '.m4a': 'audio/mp4'
+  '.m4a': 'audio/mp4',
+  '.mp4': 'video/mp4'
 });
 
 const SECURITY_HEADERS = Object.freeze({

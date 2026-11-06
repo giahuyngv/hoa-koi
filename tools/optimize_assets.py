@@ -15,6 +15,7 @@ BACKUP = os.path.join(ROOT, '_backup_assets')
 # (glob trong public/assets, quality WebP)
 GROUPS = [
     ('characters/*.jpg', 82),          # chân dung 896x1200
+    ('characters/video/*.png', 82),    # khung chờ avatar động (alpha)
     ('yaku_popup/*.png', 85),          # ảnh popup Yaku (alpha)
     ('diorama/month9/*.png', 85),      # tiểu cảnh tháng 9 (alpha)
     ('diorama/month1/*.png', 85),      # tiểu cảnh tháng 1 (alpha, xuất từ art-test/tieucanh/xuat_game_thang1.py)
