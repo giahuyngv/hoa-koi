@@ -37,6 +37,8 @@ const files = [
   'src/ui/viewportScaler.js',
   'src/ui/avatarTune.js',
   'src/data/storyData.js',
+  'src/data/storyCutscenes.js',
+  'src/story/paperCutscene.js',
   'src/story/storyMode.js',
   'src/main.js'
 ];

@@ -16,6 +16,8 @@ import {
 } from '../data/storyData.js?v=2';
 import { soundEngine } from '../audio/soundEngine.js?v=25';
 import { opponentVideoAvatar } from '../graphics/opponentVideoAvatar.js?v=1';
+import { STORY_CUTSCENES } from '../data/storyCutscenes.js?v=1';
+import { playPaperCutscene } from './paperCutscene.js?v=1';
 
 const STORY_CARD_IMG = (id) => `./public/assets/cards/card_${id}.webp?v=26`;
 const STORY_CARD_BACK = './public/assets/backs/back_urushi_red.webp?v=26';
@@ -106,12 +108,14 @@ export class StoryController {
     this.dlg = { month: 1, i: 0, phase: 'pre' };
     this.match = null; // { month, challengeMet }
     this.result = null;
+    this.cutscene = null; // cutscene kịch cắt giấy đang chạy (đè lên màn thoại)
     storyProgressOf(app.saveData);
     if (this.root) {
       this.root.addEventListener('click', (e) => this.onClick(e));
       this.root.addEventListener('input', (e) => this.onInput(e));
     }
     document.addEventListener('keydown', (e) => {
+      if (this.cutscene && this.cutscene.isActive()) return; // cutscene tự xử lý phím
       if (this.screen === 'scene' && (e.key === ' ' || e.key === 'Enter') && !/^(BUTTON|INPUT)$/.test(e.target.tagName)) {
         e.preventDefault();
         this.advance();
@@ -219,6 +223,7 @@ export class StoryController {
   }
 
   hide() {
+    if (this.cutscene) this.cutscene.skip();
     this.screen = null;
     this.panel = null;
     this.render();
@@ -463,11 +468,41 @@ export class StoryController {
   }
 
   // ---------------- Hội thoại ----------------
-  startDialogue(m, phase) {
+  startDialogue(m, phase, opts = {}) {
     this.dlg = { month: m, i: 0, phase };
     // Đọc thoại trước trận trong lúc tải avatar động của chủ tháng
     if (phase === 'pre' && STORY_MONTHS[m]) opponentVideoAvatar.preload(STORY_MONTHS[m].oppId);
     this.show('scene');
+    if (phase === 'pre' && opts.cutscene) this.playCutscene(m);
+  }
+
+  /** Cutscene kịch cắt giấy (nếu tháng có kịch bản), chạy đè lên màn thoại; xong thì lộ màn thoại bên dưới. */
+  playCutscene(m) {
+    const script = STORY_CUTSCENES[m];
+    const host = this.root && this.root.parentElement;
+    if (!script || !host) return;
+    if (this.cutscene) this.cutscene.skip();
+    const lite = document.body.classList.contains('perf-low') || !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    // Âm thanh: cue { at, fn } gọi hàm có sẵn của soundEngine; { at, snd, kind, vol, rate, loop, fadeIn } phát file trong script.audioBase
+    const aBase = script.audioBase || script.base || '';
+    const aVer = script.audioVer ? `?v=${script.audioVer}` : '';
+    const url = (f) => aBase + f + aVer;
+    (script.cues || []).forEach((c) => { if (c.snd) soundEngine.loadExtAudio(url(c.snd)); });
+    const handles = [];
+    this.cutscene = playPaperCutscene(host, script, {
+      lite,
+      onCue: (c) => {
+        if (c.fn && typeof soundEngine[c.fn] === 'function') soundEngine[c.fn]();
+        if (c.snd) {
+          const h = soundEngine.playExtAudio(url(c.snd), { kind: c.kind || 'sfx', volume: c.vol ?? 0.7, rate: c.rate || 1, loop: !!c.loop, fadeIn: c.fadeIn || 0 });
+          if (h) handles.push(h);
+        }
+      },
+      onDone: () => {
+        this.cutscene = null;
+        handles.forEach((h) => h.stop(0.8));
+      }
+    });
   }
 
   sceneView() {
@@ -619,7 +654,7 @@ export class StoryController {
     if (ds.portrait) { sp.avatar.portrait = ds.portrait; this.app.persistSave(); this.render(); return; }
     if (ds.crest) { sp.avatar.crest = ds.crest; this.app.persistSave(); this.render(); return; }
     if (ds.color) { sp.avatar.color = ds.color; this.app.persistSave(); this.render(); return; }
-    if (ds.month) { this.startDialogue(Number(ds.month), 'pre'); return; }
+    if (ds.month) { this.startDialogue(Number(ds.month), 'pre', { cutscene: true }); return; }
     if ('next' in ds) { this.advance(); return; }
     if ('skip' in ds) {
       const M = STORY_MONTHS[this.dlg.month];

@@ -11,6 +11,13 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 
 ## [Chưa phát hành]
 ### Thêm
+- Cutscene cắt giấy Tháng 2–4: Michizane (mơ, chim oanh), Koharu (anh đào, màn hội hoa thả xuống, xoay múa), Shion (tử đằng, đỗ quyên, cầu đỏ); nhân vật toàn thân Ukiyo-e, cánh hoa rơi, lồng tiếng + nhạc + SFX zps-ai.
+- Cutscene cắt giấy: dựng như sân khấu kịch (sàn gỗ + đèn chân), bóng đổ rõ và dài dần theo độ sâu lớp giấy, lớp xa phủ sương, máy quay trôi tạo thị sai giữa các lớp.
+- Cutscene Tháng 1: Tsuruhime đổi sang 1 hình toàn thân liền mảnh (Ukiyo-e), chuyển động rung/nhún/cúi chào cả người thay cho rối 4 khớp.
+- Cốt truyện: cutscene "kịch cắt giấy" (kamishibai) ~15 giây trước trận Tháng 1 khi vào từ bản đồ: cửa gỗ mở, núi/thông/đất trồi lên, hạc giấy vỗ cánh, Tsuruhime rối giấy 4 khớp bước vào, phụ đề; chạm để tua x3, nút/Esc/Enter bỏ qua, perf-low bỏ hạt và lắc lư nền (`src/story/paperCutscene.js`, kịch bản `src/data/storyCutscenes.js`).
+- Âm thanh cho cutscene Tháng 1 (gen bằng zps-ai): nhạc koto/sáo 17 giây, gõ hyoshigi, cửa trượt, gió thông, hạc vỗ cánh, giấy sột soạt, lấp lánh khi giơ lá bài; nhạc theo nút BGM (nhạc nền game hạ xuống trong lúc chiếu), tiếng theo nút SFX, tắt dần khi bỏ qua. Mở bằng file:// thì đọc từ gói `audio_pack.js` (base64, sinh bằng `node tools/pack_cutscene_audio.js`).
+- Cutscene Tháng 1: lồng tiếng (zps-ai voice) cho người dẫn truyện và Tsuruhime; rối Tsuruhime có tay trái mới kèm bàn tay, đầu nằm sau cổ áo (hết lộ mấu cổ). Tay trái gen lại buông phía ngoài; giọng đọc biểu cảm hơn; font phụ đề/tiêu đề cutscene đổi sang Hina Mincho (Google Fonts, có dấu tiếng Việt). Tay trái dùng lại tay áo gốc + bàn tay tách riêng thò ra từ cửa tay áo (khớp con `handL`, hỗ trợ góc nghỉ `rot` cho part).
+- Cutscene Tháng 1 đổi toàn bộ hình sang phong cách Ukiyo-e (vẽ lại từ ảnh cũ, giữ bố cục/khớp); bàn tay trái vểnh lên, 2 khớp vai dịch vào thân. Tay áo trái + bàn tay (chỉ bàn tay, ló ra ở cửa tay áo) gen thành 1 mảnh liền (bỏ mảnh bàn tay rời).
 - Màn chính: thêm nút "Sưu tầm" và "Rút quẻ" cạnh nút Cài đặt, mở thẳng bảng tương ứng.
 - Cốt truyện "Hành trình 12 tháng" mở đủ 4 chương (tháng 4–12): thoại trước/sau trận, thử thách riêng (5 lá Thú, Cầu Yatsuhashi, Hồ điệp, Inoshikachō, Tsukimi-zake, Chén rượu cúc, Aotan, Người đội mưa, Phượng hoàng); tháng 5 Ayame tự ra đấu, có thoại kết thúc tháng 12.
 - Khung game cố định 16:9 trên PC/iPad (viền 2 bên hoặc trên dưới theo nền washi của theme), điện thoại ngang giữ co giãn như cũ; ép bằng `?frame=169|0`, đổi kiểu viền `?framebg=theme|black|pattern`.
@@ -40,6 +47,8 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 - Kết quả rút quẻ: thẻ đáp án thu nhỏ, 5 thẻ của lượt Rút 5 Quẻ nằm vừa một hàng (kèm tên và nhãn Mới/Trùng); trên điện thoại thẻ nhỏ hơn nữa.
 - Bảng kết quả tháng/chung cuộc: khung điểm "Tổng Điểm Bạn VS đối thủ" dùng nền washi be giống thẻ ghi chú phía trên.
 ### Sửa lỗi
+- Đối thủ (máy) không đánh bài khi pop-up Koi-Koi hoặc bảng chọn Koi-Koi/Dừng đang hiện; chờ pop-up đóng mới đi tiếp.
+- Cốt truyện trên iPhone ngang: nhân vật hội thoại kéo sát mép dưới màn (không bị cắt ngang trên thanh home), mép ảnh bị cụt sẵn được làm mờ dần; lớp tối popup kết quả phủ cả tai thỏ/viền 2 bên.
 - PvP/Phòng mã: kẹt ngay lượt đầu (cả 2 bên chờ nhau) do bước bốc bài chọn người đi trước so vai 'p1/p2' với 'host/guest'.
 - Tên ngắn của Công Chúa Tsunade hiện "Công" (kết quả cốt truyện, avatar lữ khách, bảng kết thúc ván); thêm `shortName`.
 - Màn Tạo lữ khách: bỏ 2 nhãn "Gia huy (kamon)" và "Màu nền gia huy" (trước đó nhãn dính sát lưới chân dung).

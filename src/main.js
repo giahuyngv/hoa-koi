@@ -2951,10 +2951,13 @@ class HanaKoiApp {
   scheduleAiTurn() {
     if (this.isMultiplayerMatch()) return;
     // Tạm dừng AI khi đang mở hướng dẫn / xem bài đã ăn / popup ăn bộ; đóng modal sẽ gọi lại
+    // + pop-up Koi-Koi / bảng chọn Koi-Koi hay Dừng đang hiện: đóng xong mới gọi lại
     if (
       this.activeModal === 'tutorial' ||
       this.activeModal === 'captured_view' ||
-      this.yakuRevealActive
+      this.yakuRevealActive ||
+      this.koikoiCutinActive ||
+      this.engine.phase === 'PLAYER_KOIKOI_DECISION'
     ) {
       return;
     }
@@ -2967,7 +2970,8 @@ class HanaKoiApp {
         this.isMultiplayerMatch() ||
         this.activeModal === 'tutorial' ||
         this.activeModal === 'captured_view' ||
-        this.yakuRevealActive
+        this.yakuRevealActive ||
+        this.koikoiCutinActive
       ) {
         return;
       }
@@ -3266,10 +3270,17 @@ class HanaKoiApp {
     // Lá bài đang bay nằm ở lớp trên body (trên cả #app) → ẩn tạm để không đè lên cut-in
     document.body.classList.add('hk-cutin-open');
     clearTimeout(this.cutinTimer);
+    // Pop-up Koi-Koi đang hiện → AI chờ (scheduleAiTurn), đóng xong mới cho đi tiếp
+    this.koikoiCutinActive = true;
     const closeCutin = () => {
       clearTimeout(this.cutinTimer);
       root.replaceChildren();
       document.body.classList.remove('hk-cutin-open');
+      if (!this.koikoiCutinActive) return;
+      this.koikoiCutinActive = false;
+      if (this.engine && this.engine.phase === 'AI_TURN' && !this.isAnimating) {
+        this.scheduleAiTurn();
+      }
     };
     // Cut-in đối thủ (có chân dung): nền tối, hiện lâu hơn, chạm bất kỳ đâu để đóng ngay
     if (portraitUrl) {

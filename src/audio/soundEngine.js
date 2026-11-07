@@ -981,6 +981,119 @@ class SoundEngine {
   /**
    * Mở bảng quyết định Koi-Koi / Shōbu: tiếng giấy lật trầm + phách gỗ nhẹ
    */
+  /**
+   * Âm thanh rời theo URL (cutscene cốt truyện): tải + giải mã 1 lần, có cache.
+   * kind 'music' theo nút BGM (tạm dừng BGM game trong lúc phát), còn lại theo nút SFX.
+   * Trả về handle { stop(fadeSec) } hoặc null nếu đang tắt.
+   */
+  loadExtAudio(url) {
+    this.extAudio = this.extAudio || {};
+    if (this.extAudio[url]) return this.extAudio[url];
+    const ctx = this.ensureContext(false);
+    if (!ctx) return Promise.resolve(null);
+    // file:// chặn fetch -> đọc từ gói base64 `audio_pack.js` cùng thư mục (nạp bằng <script>, hợp CSP script-src 'self')
+    const isFile = window.location && window.location.protocol === 'file:';
+    const getBuf = isFile ? this._extAudioFromPack(url) : (typeof fetch === 'function' ? fetch(url).then((r) => (r.ok ? r.arrayBuffer() : null)) : Promise.resolve(null));
+    const p = getBuf
+      .then((ab) => (ab ? new Promise((res) => {
+        try {
+          const ret = ctx.decodeAudioData(ab, res, () => res(null));
+          if (ret && typeof ret.then === 'function') ret.then(res, () => res(null));
+        } catch { res(null); }
+      }) : null))
+      .catch(() => null);
+    this.extAudio[url] = p;
+    p.then((b) => { if (!b) delete this.extAudio[url]; });
+    return p;
+  }
+
+  _extAudioFromPack(url) {
+    const clean = url.split('?')[0];
+    const dir = clean.slice(0, clean.lastIndexOf('/') + 1);
+    const name = clean.slice(dir.length);
+    this.extPacks = this.extPacks || {};
+    if (!this.extPacks[dir]) {
+      this.extPacks[dir] = new Promise((res) => {
+        const sc = document.createElement('script');
+        sc.src = dir + 'audio_pack.js';
+        sc.onload = () => res(true);
+        sc.onerror = () => res(false);
+        document.head.appendChild(sc);
+      });
+    }
+    return this.extPacks[dir].then(() => {
+      const b64 = window.HK_CS_AUDIO && window.HK_CS_AUDIO[dir.replace(/^.*\/public\//, 'public/') + name];
+      if (!b64) return null;
+      const bin = atob(b64);
+      const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      return u8.buffer;
+    });
+  }
+
+  playExtAudio(url, { kind = 'sfx', volume = 0.7, rate = 1, loop = false, fadeIn = 0 } = {}) {
+    const on = kind === 'music' ? this.bgmEnabled : this.sfxEnabled;
+    if (!on) return null;
+    const ctx = this.ensureContext();
+    if (!ctx) return null;
+    const h = { src: null, gain: null, stopped: false };
+    h.stop = (fade = 0.4) => {
+      if (h.stopped) return;
+      h.stopped = true;
+      if (kind === 'music') this._resumeBgmAfterCutscene();
+      if (!h.src) return;
+      const t = ctx.currentTime;
+      try {
+        h.gain.gain.cancelScheduledValues(t);
+        h.gain.gain.setValueAtTime(h.gain.gain.value, t);
+        h.gain.gain.linearRampToValueAtTime(0.0001, t + Math.max(0.02, fade));
+        h.src.stop(t + Math.max(0.02, fade) + 0.05);
+      } catch { /* bỏ qua */ }
+    };
+    if (kind === 'music') this._pauseBgmForCutscene();
+    this.loadExtAudio(url).then((buf) => {
+      if (!buf || h.stopped) return;
+      const t = ctx.currentTime;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = loop;
+      src.playbackRate.setValueAtTime(rate, t);
+      const gain = ctx.createGain();
+      if (fadeIn > 0) {
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.linearRampToValueAtTime(volume, t + fadeIn);
+      } else {
+        gain.gain.setValueAtTime(volume, t);
+      }
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      h.src = src;
+      h.gain = gain;
+      src.onended = () => { if (kind === 'music' && !h.stopped) { h.stopped = true; this._resumeBgmAfterCutscene(); } };
+      try { src.start(t); } catch { /* bỏ qua */ }
+    });
+    return h;
+  }
+
+  // Hạ nhạc nền game về 0 trong lúc cutscene có nhạc riêng (không dừng hẳn để khỏi mất vị trí)
+  _pauseBgmForCutscene() {
+    this.cutsceneDuck = (this.cutsceneDuck || 0) + 1;
+    if (this.bgmHtmlAudio) { try { this.bgmHtmlAudio.volume = 0; } catch { /* bỏ qua */ } } // BGM dạng <audio> (file://)
+    if (!this.bgmMasterGain || !this.ctx) return;
+    const g = this.bgmMasterGain.gain, t = this.ctx.currentTime;
+    try { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0.0001, t + 0.5); } catch { /* bỏ qua */ }
+  }
+
+  _resumeBgmAfterCutscene() {
+    if (!this.cutsceneDuck) return;
+    this.cutsceneDuck -= 1;
+    if (this.cutsceneDuck > 0) return;
+    if (this.bgmHtmlAudio) { try { this.bgmHtmlAudio.volume = this.bgmVolume; } catch { /* bỏ qua */ } }
+    if (!this.bgmMasterGain || !this.ctx) return;
+    const g = this.bgmMasterGain.gain, t = this.ctx.currentTime;
+    try { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(this.bgmVolume, t + 1.2); } catch { /* bỏ qua */ }
+  }
+
   playScrollOpen() {
     this.playCardBuffer('flip', { volume: 0.7, rate: 0.72 });
     setTimeout(() => this.playCardBuffer('click', { volume: 0.5, rate: 0.85 }), 140);

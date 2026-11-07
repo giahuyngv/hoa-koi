@@ -6994,7 +6994,9 @@ body.layout-compact #app { --st-pad: 12px; --st-gap: 10px; }
 .st-screen .kk-btn-main, .st-screen .kk-btn-sub, .st-modal .kk-btn-main, .st-modal .kk-btn-sub { opacity: 1; animation: none; }
 #story-root .st-screen { font-family: var(--font-body); }
 .st-center { align-items: center; justify-content: center; }
-.st-dim { background: rgba(14, 8, 4, .55); }
+/* Lớp tối tràn ra cả tai thỏ / thanh home / viền 16:9 (nội dung vẫn trong khung) */
+.st-dim { z-index: 0; }
+.st-dim::before { content: ''; position: absolute; inset: var(--hk-bleed-inset, 0); z-index: -1; pointer-events: none; background: rgba(14, 8, 4, .55); }
 .st-fill { flex: 1; min-height: 0; }
 .st-fill > .tt-body { flex: 1; min-height: 0; }
 .st-row-end { display: flex; justify-content: flex-end; gap: 12px; }
@@ -7237,9 +7239,13 @@ body.dark-mode .st-logo b { text-shadow: 0 0 22px rgba(255,107,90,.35); }
 .st-stage { position: relative; flex: 1; min-height: 0; }
 .st-watermark { position: absolute; right: 22%; top: 2%; font-size: 300px; line-height: 1; color: var(--st-ink); opacity: .08; pointer-events: none; }
 /* Nhân vật neo sát mép dưới màn (bù padding của .st-screen) để mép cắt của ảnh trùng mép màn; rộng tối đa ~32% khung */
-.st-actor { position: absolute; bottom: calc(-1 * var(--st-pad)); height: min(calc(96% + var(--st-pad)), calc(50 * var(--avw, 1vw))); transition: filter .25s ease, transform .25s ease; filter: brightness(.5) saturate(.6); transform: scale(.96); transform-origin: 50% 100%; }
+/* --st-bleed-b: phần đáy ngoài #app (thanh home iPhone / viền 16:9) để mép cắt ảnh trùng mép màn thật */
+.st-actor { --st-bleed-b: calc(var(--sa-b, 0px) / var(--ui-scale, 1)); position: absolute; bottom: calc(-1 * (var(--st-pad) + var(--st-bleed-b))); height: min(calc(96% + var(--st-pad) + var(--st-bleed-b)), calc(50 * var(--avw, 1vw) + var(--st-bleed-b))); transition: filter .25s ease, transform .25s ease; filter: brightness(.5) saturate(.6); transform: scale(.96); transform-origin: 50% 100%; }
+html.hk-frame-169 .st-actor { --st-bleed-b: 0px; } /* khung 16:9: giữ trong khung, không tràn xuống viền */
 .st-actor.is-on { filter: none; transform: none; }
 .st-actor img { height: 100%; width: auto; display: block; filter: drop-shadow(0 10px 18px rgba(0,0,0,.45)); }
+/* Ảnh cutout bị cắt sẵn ở mép phải (tay áo/tóc chạm biên ảnh) -> làm mờ dần 2 mép thay vì cụt thẳng */
+.st-actor > img { -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 5%, #000 86%, transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 5%, #000 86%, transparent 100%); }
 .st-actor.is-left { left: 2%; }
 .st-actor.is-right { right: 2%; }
 .st-me-card { position: relative; height: 100%; aspect-ratio: 3 / 4; }
@@ -7662,3 +7668,55 @@ html .modal-backdrop {
     calc(20px + var(--sa-b, 0px) / var(--ui-scale, 1))
     calc(20px + var(--sa-l, 0px) / var(--ui-scale, 1));
 }
+
+/* ==========================================================================
+   CUTSCENE KỊCH CẮT GIẤY (kamishibai) trước trận Cốt truyện — src/story/paperCutscene.js
+   Sân khấu 1600x900 tự co (JS); khung gỗ + 2 cánh cửa giấy; phụ đề dải washi.
+   ========================================================================== */
+.pc-root { --pc-font: 'Hina Mincho', 'Noto Serif JP', 'Noto Serif', serif; position: absolute; inset: var(--hk-bleed-inset, 0); z-index: 95; overflow: hidden; background: radial-gradient(ellipse at 50% 40%, #2a1d2e 0%, #120d1a 75%); cursor: pointer; user-select: none; -webkit-user-select: none; }
+.pc-stage { position: absolute; left: 50%; top: 50%; width: 1600px; height: 900px; transform-origin: 50% 50%; }
+.pc-world { position: absolute; inset: 0; overflow: hidden; background: #f3e6c8; }
+.pc-actor, .pc-sway, .pc-part { position: absolute; left: 0; top: 0; will-change: transform; }
+.pc-actor .pc-sway { position: relative; }
+.pc-actor img, .pc-part img { display: block; max-width: none; pointer-events: none; }
+/* Lớp giấy: bóng đổ dài dần theo độ sâu --pc-d (z); lớp xa phủ sương, hơi nhạt màu */
+.pc-actor { --pc-d: 0; }
+.pc-part img, .pc-sway > img { filter: drop-shadow(calc(var(--pc-d) * 3px) calc(var(--pc-d) * 4.5px + 2px) calc(var(--pc-d) * 1px + 2px) rgba(35, 15, 5, calc(.22 + var(--pc-d) * .05))) drop-shadow(0 0 1px rgba(35, 15, 5, .35)); }
+.pc-actor.is-far .pc-sway > img, .pc-actor.is-far .pc-part img { filter: saturate(.8) brightness(1.05) contrast(.92) drop-shadow(calc(var(--pc-d) * 3px) calc(var(--pc-d) * 4px + 2px) calc(var(--pc-d) * 1px + 2px) rgba(35, 15, 5, .26)) drop-shadow(0 0 1px rgba(35, 15, 5, .3)); }
+/* Quầng đèn chân sân khấu (trên các lớp giấy, dưới phụ đề) + sàn gỗ */
+.pc-light { position: absolute; inset: 0; z-index: 9; pointer-events: none; }
+.pc-light i { position: absolute; inset: 0; display: block; }
+.pc-foot { top: auto; height: 34%; background: radial-gradient(ellipse 22% 60% at 20% 112%, rgba(255, 196, 110, .38), transparent 70%), radial-gradient(ellipse 22% 60% at 50% 112%, rgba(255, 196, 110, .38), transparent 70%), radial-gradient(ellipse 22% 60% at 80% 112%, rgba(255, 196, 110, .38), transparent 70%); mix-blend-mode: screen; }
+.pc-apron { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; height: 44px; background: linear-gradient(180deg, #8a5532 0, #5e351f 30%, #3a1f12 100%); box-shadow: 0 -2px 0 #c9a25a, 0 -24px 44px rgba(255, 190, 100, .3); }
+.pc-apron::before { content: ''; position: absolute; left: 6%; right: 6%; top: -9px; height: 16px; background: radial-gradient(circle at 50% 70%, #fff4c8 0 3px, #ffbf55 4px 6px, transparent 9px) 0 0 / 120px 100% repeat-x; filter: drop-shadow(0 0 6px rgba(255, 200, 100, .9)); }
+.pc-rig { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.pc-flake { position: absolute; z-index: 8; border-radius: 50% 40% 55% 45%; background: #fffaf0; box-shadow: 1px 2px 2px rgba(60, 40, 30, .25); pointer-events: none; }
+/* Cánh hoa rơi (Tháng 2 mơ đỏ/trắng, Tháng 3 anh đào hồng) */
+.pc-flake.is-petal { border-radius: 80% 0 80% 0; box-shadow: 1px 2px 2px rgba(80, 30, 40, .22); }
+.pc-flake.is-sakura { background: #f9cfd9; }
+.pc-flake.is-sakura:nth-of-type(3n) { background: #fde9ee; }
+.pc-flake.is-plum { background: #fff6ee; }
+.pc-flake.is-plum:nth-of-type(3n) { background: #c8323c; }
+/* Phụ đề: dải giấy washi dưới sân khấu */
+.pc-caps { position: absolute; left: 80px; bottom: 70px; z-index: 20; width: 880px; pointer-events: none; }
+.pc-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 170px 18px 40px; background: rgba(250, 242, 222, .94); border: 2px solid #6b3a22; border-radius: 4px; box-shadow: 0 0 0 6px rgba(250, 242, 222, .5), 0 10px 26px rgba(30, 15, 10, .35); color: #2a1a12; font-family: var(--pc-font); }
+.pc-cap p { margin: 0; font-size: 31px; line-height: 1.45; font-weight: 400; letter-spacing: .01em; }
+.pc-cap b { display: inline-block; margin: -40px 0 6px -10px; padding: 4px 18px; background: #b8322a; color: #fff; font-family: var(--pc-font); font-weight: 700; font-size: 23px; letter-spacing: .06em; border-radius: 3px; }
+.pc-cap span { position: absolute; right: 26px; top: 50%; transform: translateY(-50%); font-family: var(--font-title); font-size: 44px; color: #b8322a; opacity: .85; }
+/* Khung gỗ kamishibai + cửa */
+.pc-frame { position: absolute; inset: 0; z-index: 30; pointer-events: none; }
+.pc-frame::after { content: ''; position: absolute; inset: 0; border: 26px solid #5a3220; border-image: linear-gradient(135deg, #7a4a2c, #4a2716 40%, #6d3f25 70%, #3e2012) 1; box-shadow: inset 0 0 0 4px #c9a25a, inset 0 0 40px rgba(0, 0, 0, .45); }
+.pc-door { position: absolute; top: 0; bottom: 0; width: 50%; display: flex; align-items: center; justify-content: center; background: #ead7b3 repeating-linear-gradient(90deg, rgba(120, 80, 40, .06) 0 2px, transparent 2px 9px); box-shadow: inset 0 0 0 10px #6b3a22, inset 0 0 0 14px #c9a25a; }
+.pc-door.is-l { left: 0; }
+.pc-door.is-r { right: 0; }
+.pc-door span { font-family: var(--font-title); font-size: 300px; color: #b8322a; opacity: .18; }
+.pc-title { position: absolute; left: 50%; top: 50%; z-index: 2; padding: 26px 64px; text-align: center; background: #faf2de; border: 3px solid #6b3a22; box-shadow: 0 0 0 8px #faf2de, 0 0 0 11px #c9a25a, 0 18px 40px rgba(0, 0, 0, .35); color: #2a1a12; }
+.pc-title small { display: block; font-family: var(--pc-font); font-size: 22px; letter-spacing: .08em; color: #6b3a22; }
+.pc-title b { display: block; font-family: var(--pc-font); font-size: 80px; font-weight: 400; letter-spacing: .08em; color: #b8322a; }
+/* Nút bỏ qua + báo tua nhanh (ngoài sân khấu co giãn, nằm ở góc màn) */
+.pc-ui { position: absolute; right: 22px; top: 18px; z-index: 40; display: flex; gap: 12px; align-items: center; }
+.pc-skip { font-size: 18px; padding: 8px 18px; }
+.pc-ff { opacity: 0; padding: 6px 12px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #ffd166; font-weight: 700; transition: opacity .2s; }
+.pc-root.is-ff .pc-ff { opacity: 1; }
+body.perf-low .pc-part img, body.perf-low .pc-sway > img { filter: none; }
+@media (prefers-reduced-motion: reduce) { .pc-flake { display: none; } }
