@@ -7697,6 +7697,18 @@ html .modal-backdrop {
 .pc-flake.is-sakura:nth-of-type(3n) { background: #fde9ee; }
 .pc-flake.is-plum { background: #fff6ee; }
 .pc-flake.is-plum:nth-of-type(3n) { background: #c8323c; }
+/* Tháng 6-12: mẫu đơn, hồ chi, lông lau, cúc, lá phong, mưa, vàng lá */
+.pc-flake.is-peony { background: #c42a45; }
+.pc-flake.is-peony:nth-of-type(3n) { background: #f4b8c4; }
+.pc-flake.is-hagi { background: #c8508e; width: 7px !important; height: 6px !important; }
+.pc-flake.is-hagi:nth-of-type(2n) { background: #f1d6e6; }
+.pc-flake.is-fluff { background: radial-gradient(circle, #fffdf2 0 35%, rgba(240, 228, 190, .5) 60%, transparent 72%); box-shadow: none; }
+.pc-flake.is-kiku { background: #f2b52c; }
+.pc-flake.is-kiku:nth-of-type(3n) { background: #fff4d8; }
+.pc-flake.is-maple { background: #c7301e; border-radius: 10% 60% 10% 60%; clip-path: polygon(50% 0, 62% 30%, 98% 22%, 72% 52%, 88% 92%, 50% 72%, 12% 92%, 28% 52%, 2% 22%, 38% 30%); width: 20px !important; height: 20px !important; }
+.pc-flake.is-maple:nth-of-type(3n) { background: #e8781c; }
+.pc-flake.is-rain { width: 3px !important; height: 48px !important; border-radius: 2px; background: linear-gradient(180deg, transparent, rgba(240, 245, 252, .9)); box-shadow: none; }
+.pc-flake.is-gold { background: #f3c64a; width: 7px !important; height: 7px !important; box-shadow: 0 0 6px rgba(255, 210, 90, .9); }
 /* Phụ đề: dải giấy washi dưới sân khấu */
 .pc-caps { position: absolute; left: 80px; bottom: 70px; z-index: 20; width: 880px; pointer-events: none; }
 .pc-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 170px 18px 40px; background: rgba(250, 242, 222, .94); border: 2px solid #6b3a22; border-radius: 4px; box-shadow: 0 0 0 6px rgba(250, 242, 222, .5), 0 10px 26px rgba(30, 15, 10, .35); color: #2a1a12; font-family: var(--pc-font); }

@@ -99,8 +99,14 @@ export function playPaperCutscene(host, script, opt = {}) {
       f.style.width = px(s);
       f.style.height = px(s * (0.6 + Math.random() * 0.5));
       world.appendChild(f);
+      if (P.rain) { // mưa: rơi thẳng xiên nhanh, không xoay
+        const rd = 650 + Math.random() * 350;
+        f.animate([{ transform: 'translate(0,0) rotate(12deg)' }, { transform: `translate(-${SH * 0.21}px, ${SH + 80}px) rotate(12deg)` }],
+          { duration: rd, delay: Math.random() * rd * 3, iterations: Infinity, easing: 'linear' });
+        continue;
+      }
       const dx = (Math.random() - 0.5) * 260;
-      const dur = 7000 + Math.random() * 6000;
+      const dur = (7000 + Math.random() * 6000) * (P.slow || 1);
       f.animate([
         { transform: 'translate(0,0) rotate(0deg)' },
         { transform: `translate(${dx * 0.5}px, ${SH * 0.5}px) rotate(${180 + Math.random() * 180}deg)` },
