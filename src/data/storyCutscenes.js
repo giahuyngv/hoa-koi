@@ -6,7 +6,7 @@
 export const STORY_CUTSCENES = {
   1: {
     base: './public/assets/diorama/cutscene_m1/',
-    ver: 10, // >= 6: bản Ukiyo-e
+    ver: 11, // >= 6: bản Ukiyo-e
     kicker: 'Hành trình 12 tháng · Tháng Giêng',
     title: 'Tùng Hạc',
     doorL: '松',
@@ -19,7 +19,7 @@ export const STORY_CUTSCENES = {
       { id: 'pineR', src: 'pine_r.webp', x: 1210, y: 454, w: 435, h: 476, z: 3, origin: '60% 100%' },
       { id: 'ground', src: 'ground.webp', x: -60, y: 545, w: 1720, h: 650, z: 4 },
       // Đối thủ: 1 hình toàn thân liền mảnh (art-test/fullbuild.py), rung/di chuyển cả người, gốc xoay ở chân
-      { id: 'tsuru', src: 'tsuru_full.webp', x: 1025, y: 232, w: 330, h: 640, z: 7, origin: '50% 100%' }
+      { id: 'tsuru', src: 'tsuru_full.webp', x: 1046, y: 232, w: 289, h: 640, z: 7, origin: '50% 100%' }
     ],
     rigs: [
       {
@@ -97,7 +97,7 @@ export const STORY_CUTSCENES = {
   // ---- Tháng 2: Mơ và chim oanh — Michizane Tenjin ----
   2: {
     base: './public/assets/diorama/cutscene_m2/',
-    ver: 1,
+    ver: 2,
     kicker: 'Hành trình 12 tháng · Tháng Hai',
     title: 'Mai Oanh',
     doorL: '梅',
@@ -108,7 +108,7 @@ export const STORY_CUTSCENES = {
       { id: 'ground', src: 'ground.webp', x: -60, y: 545, w: 1720, h: 650, z: 4 },
       { id: 'plumL', src: 'plum_l.webp', x: -90, y: 200, w: 607, h: 710, z: 3, origin: '40% 100%' },
       { id: 'plumR', src: 'plum_r.webp', x: 1190, y: 400, w: 460, h: 503, z: 3, origin: '60% 100%' },
-      { id: 'michi', src: 'michi_full.webp', x: 1022, y: 232, w: 336, h: 640, z: 7, origin: '50% 100%' }
+      { id: 'michi', src: 'michi_full.webp', x: 1043, y: 232, w: 294, h: 640, z: 7, origin: '50% 100%' }
     ],
     rigs: [
       {
@@ -181,7 +181,7 @@ export const STORY_CUTSCENES = {
   // ---- Tháng 3: Anh đào và màn che — Koharu Hinata ----
   3: {
     base: './public/assets/diorama/cutscene_m3/',
-    ver: 2,
+    ver: 3,
     kicker: 'Hành trình 12 tháng · Tháng Ba',
     title: 'Anh Đào',
     doorL: '桜',
@@ -193,7 +193,7 @@ export const STORY_CUTSCENES = {
       { id: 'ground', src: 'ground.webp', x: -60, y: 545, w: 1720, h: 628, z: 4 },
       { id: 'treeL', src: 'tree_l.webp', x: -90, y: 190, w: 620, h: 705, z: 3, origin: '40% 100%' },
       { id: 'treeR', src: 'tree_r.webp', x: 1180, y: 400, w: 476, h: 505, z: 3, origin: '60% 100%' },
-      { id: 'koharu', src: 'koharu_full.webp', x: 1012, y: 232, w: 356, h: 640, z: 7, origin: '50% 100%' }
+      { id: 'koharu', src: 'koharu_full.webp', x: 1034, y: 232, w: 313, h: 640, z: 7, origin: '50% 100%' }
     ],
     particles: { count: 26, cls: 'is-petal is-sakura' },
     tracks: [
@@ -243,7 +243,7 @@ export const STORY_CUTSCENES = {
   // ---- Tháng 4: Tử đằng và đỗ quyên — Shion (Fujiwara) ----
   4: {
     base: './public/assets/diorama/cutscene_m4/',
-    ver: 2,
+    ver: 3,
     kicker: 'Hành trình 12 tháng · Tháng Tư',
     title: 'Đằng Quyên',
     doorL: '藤',
@@ -254,7 +254,7 @@ export const STORY_CUTSCENES = {
       { id: 'ground', src: 'ground.webp', x: -60, y: 545, w: 1720, h: 650, z: 4 },
       { id: 'treeL', src: 'tree_l.webp', x: -90, y: 190, w: 759, h: 710, z: 3, origin: '10% 100%' },
       { id: 'treeR', src: 'tree_r.webp', x: 1180, y: 400, w: 443, h: 522, z: 3, origin: '60% 100%' },
-      { id: 'shion', src: 'shion_full.webp', x: 1008, y: 232, w: 364, h: 640, z: 7, origin: '50% 100%' }
+      { id: 'shion', src: 'shion_full.webp', x: 1031, y: 232, w: 318, h: 640, z: 7, origin: '50% 100%' }
     ],
     rigs: [
       {
@@ -413,7 +413,7 @@ Object.assign(STORY_CUTSCENES, {
   // ---- Tháng 5: Diên vĩ và cầu tám nhịp — Ayame (người dẫn đường) ----
   5: pcMonth({
     m: 5, name: 'ayame', who: 'Ayame', kicker: 'Tháng Năm', title: 'Diên Vĩ', doorL: '菖', doorR: '橋', mood: 'lively',
-    full: [411, 900], ground: [1376, 520], tl: [584, 735], tr: [404, 532], treeSkew: true,
+    full: [361, 900], ver: 2, ground: [1376, 520], tl: [584, 735], tr: [404, 532], treeSkew: true,
     bird: { k: 0.32, y: 170, body: [890, 288, 488, 107], far: [292, 587, 165, 528], near: [348, 555, 261, 490], flap: 0.16, fly: 5.5, bob: 18, bobDur: 0.5, wing: [[-30, 30], [-24, 26]] },
     cap: ['Tháng Năm... Đầm diên vĩ tím ngắt, cây cầu tám nhịp uốn khúc trên mặt nước.', '皐月',
       'Chim bói cá lướt qua mặt đầm: người dẫn đường Ayame bỗng dừng chân giữa cầu.', '菖蒲に八橋',
@@ -423,7 +423,7 @@ Object.assign(STORY_CUTSCENES, {
   // ---- Tháng 6: Mẫu đơn và bướm — Yukiho Katsuragi ----
   6: pcMonth({
     m: 6, name: 'yukiho', who: 'Yukiho', kicker: 'Tháng Sáu', title: 'Mẫu Đơn', doorL: '牡', doorR: '蝶', mood: 'grand',
-    full: [449, 900], ground: [1376, 520], tl: [701, 753], tr: [494, 521], tlW: 640, trW: 480,
+    full: [387, 900], ver: 2, ground: [1376, 520], tl: [701, 753], tr: [494, 521], tlW: 640, trW: 480,
     particles: { count: 14, cls: 'is-petal is-peony' },
     bird: { k: 0.3, y: 200, body: [670, 266, 282, 115], far: [669, 466, 374, 407], near: [470, 638, 52, 407], flap: 0.14, fly: 8, dist: 2200, bob: 30, bobDur: 0.7, wing: [[-8, 28], [8, -24]] },
     cap: ['Tháng Sáu... Phố đèn lồng lên đèn, mẫu đơn nở đỏ rực trong vườn hoa khôi.', '水無月',
@@ -453,7 +453,7 @@ Object.assign(STORY_CUTSCENES, {
   // ---- Tháng 8: Cỏ lau và trăng rằm — Kaguya ----
   8: pcMonth({
     m: 8, name: 'kaguya', who: 'Kaguya', kicker: 'Tháng Tám', title: 'Trăng Rằm', doorL: '芒', doorR: '月', mood: 'calm',
-    full: [504, 900], ground: [1376, 566], tl: [775, 734], tr: [492, 527], tlW: 660, trW: 480, treeSkew: true, treeSway: 3.6,
+    full: [440, 900], ver: 2, ground: [1376, 566], tl: [775, 734], tr: [492, 527], tlW: 660, trW: 480, treeSkew: true, treeSway: 3.6,
     particles: { count: 14, cls: 'is-fluff', slow: 1.4 },
     bird: { k: 0.25, y: 130, z: 2, body: [1165, 293, 612, 103], far: [541, 497, 64, 417], near: [572, 341, 61, 231], flap: 0.45, fly: 9, dist: 2400, bob: 10, wing: [[-30, 18], [-24, 16]] },
     cap: ['Tháng Tám... Đêm rằm, trăng sáng vằng vặc trên đồi cỏ lau bạc.', '葉月',
@@ -508,7 +508,7 @@ Object.assign(STORY_CUTSCENES, {
   // ---- Tháng 12: Ngô đồng và phượng hoàng — Amaterasu Hōō ----
   12: pcMonth({
     m: 12, name: 'amaterasu', who: 'Amaterasu', kicker: 'Tháng Chạp', title: 'Phượng Hoàng', doorL: '桐', doorR: '鳳', mood: 'grand', charAt: 11.4,
-    full: [529, 900], ground: [1376, 520], tl: [589, 750], tr: [450, 534],
+    full: [456, 900], ver: 2, ground: [1376, 520], tl: [589, 750], tr: [450, 534],
     particles: { count: 18, cls: 'is-gold', slow: 1.3 },
     bird: { k: 0.34, y: 230, body: [1254, 388, 259, 181], far: [392, 435, 100, 393], near: [505, 368, 55, 297], flap: 0.5, fly: 9.5, dist: 2500, bob: 16, bobDur: 1.4, wing: [[-30, 22], [-24, 18]] },
     cap: ['Tháng Chạp... Bình minh cuối năm nhuộm vàng tán ngô đồng.', '師走',
