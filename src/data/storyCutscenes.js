@@ -437,7 +437,7 @@ Object.assign(STORY_CUTSCENES, {
   // ---- Tháng 7: Hồ chi và lợn rừng — Tsunade ----
   7: pcMonth({
     m: 7, name: 'tsunade', who: 'Tsunade', kicker: 'Tháng Bảy', title: 'Hồ Chi', doorL: '萩', doorR: '猪', mood: 'bold',
-    full: [419, 900], ver: 2, ground: [1376, 520], tl: [745, 732], tr: [517, 526], tlW: 660, trW: 480,
+    full: [377, 900], ver: 3, ground: [1376, 520], tl: [745, 732], tr: [517, 526], tlW: 660, trW: 480,
     particles: { count: 22, cls: 'is-petal is-hagi' },
     layers: [{ id: 'boar', src: 'prop.webp', x: 1700, y: 590, w: 440, h: 242, z: 5, origin: '50% 100%' }],
     tracks: [
@@ -464,7 +464,7 @@ Object.assign(STORY_CUTSCENES, {
   // ---- Tháng 9: Cúc và chén rượu — Shuten Kikumaru ----
   9: pcMonth({
     m: 9, name: 'kikumaru', who: 'Kikumaru', kicker: 'Tháng Chín', title: 'Cúc Tửu', doorL: '菊', doorR: '盃', mood: 'bold',
-    full: [366, 900], ver: 2, ground: [1376, 520], tl: [585, 742], tr: [460, 523],
+    full: [331, 900], ver: 3, ground: [1376, 520], tl: [585, 742], tr: [460, 523],
     particles: { count: 16, cls: 'is-petal is-kiku' },
     layers: [{ id: 'cup', src: 'prop.webp', x: 450, y: 290, w: 420, h: 229, z: 2, origin: '50% 50%' }],
     tracks: [
@@ -497,7 +497,7 @@ Object.assign(STORY_CUTSCENES, {
   // ---- Tháng 11: Liễu và người đội mưa — Haruto Abe ----
   11: pcMonth({
     m: 11, name: 'haruto', who: 'Haruto', kicker: 'Tháng Mười Một', title: 'Liễu Vũ', doorL: '柳', doorR: '雨', mood: 'calm',
-    full: [421, 900], ver: 2, ground: [1376, 520], tl: [682, 747], tr: [466, 536], treeSkew: true, treeSway: 2.4,
+    full: [384, 900], ver: 3, ground: [1376, 520], tl: [682, 747], tr: [466, 536], treeSkew: true, treeSway: 2.4,
     particles: { count: 60, cls: 'is-rain', rain: true },
     bird: { k: 0.3, y: 190, body: [882, 235, 261, 111], far: [367, 458, 47, 385], near: [491, 362, 62, 321], flap: 0.12, fly: 4.5, bob: 26, bobDur: 0.6, wing: [[-36, 28], [-28, 24]] },
     cap: ['Tháng Mười Một... Mưa rơi trên bến sông, rặng liễu rũ tóc xuống mặt nước.', '霜月',
