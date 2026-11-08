@@ -11,6 +11,7 @@ Ghi thay đổi vào **[Chưa phát hành]**, khi ra bản chạy `node tools/re
 
 ## [Chưa phát hành]
 ### Thêm
+- Cutscene cắt giấy Tháng 7, 9, 10, 11: gen mới Tsunade, Kikumaru, Renji, Haruto dáng cao ~8,5 đầu (ảnh gen thật, bỏ bản kéo giãn).
 - Cutscene cắt giấy: nhân vật cả 12 tháng kéo dài thân (dưới cổ) cho dáng cao thon, tỉ lệ đều nhau.
 - Cutscene cắt giấy Tháng 5–12 (đủ 12 tháng): Ayame (diên vĩ, cầu tám nhịp, bói cá), Yukiho (mẫu đơn, bướm phượng), Tsunade (hồ chi, lợn rừng lao qua), Kaguya (cỏ lau, trăng rằm, ngỗng trời), Kikumaru (cúc, chén rượu thọ hạ xuống), Renji (phong đỏ, hươu sao), Haruto (liễu, mưa, chim én), Amaterasu (ngô đồng, bình minh, phượng hoàng); nhân vật toàn thân Ukiyo-e, hạt rơi riêng từng tháng (cánh mẫu đơn/hồ chi/cúc, lông lau, lá phong, mưa, vàng lá), lồng tiếng + nhạc + SFX zps-ai. Kịch bản dựng từ mẫu chung `pcMonth()` trong `src/data/storyCutscenes.js`.
 - Cutscene cắt giấy Tháng 2–4: Michizane (mơ, chim oanh), Koharu (anh đào, màn hội hoa thả xuống, xoay múa), Shion (tử đằng, đỗ quyên, cầu đỏ); nhân vật toàn thân Ukiyo-e, cánh hoa rơi, lồng tiếng + nhạc + SFX zps-ai.
